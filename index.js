@@ -35,8 +35,6 @@ class DistriServer extends EventEmitter {
             return {workers:0, work:work, solutions:[]}
         })
         
-        const d = new Date()
-        
         let usingEmpty = false
         
         const empty = new Float32Array(Math.ceil(this.session.length/20))
@@ -65,7 +63,7 @@ class DistriServer extends EventEmitter {
         }
         
         this.server.on('connection', (ws) => {
-            let ind;
+            let ind = -1;
             let gen = idgen()
             this.userCount++
             
@@ -79,23 +77,20 @@ class DistriServer extends EventEmitter {
             
             ws.on('message', (m) => {
                 
-                
                 if (m.constructor !== Buffer) {
                     if(this.options.security.strict) ws.close()
                     return;
                 }
                 
                 const message = msg.unpack(m);
-                
-                
                 if ((message.constructor !== Object) || !message.response || !message.responseType) {
+                    console.log(message.constructor)
                     if(this.options.security.strict) ws.close()
                     return;
                 }
-                
                 switch(message.responseType) {
                     case "request":
-                        ws.send(msg.pack({data:[gen,this.options.security.hashStrength],responseType:'submit_hash'}), {binary:true})
+                        ws.send(msg.pack({data:[gen,this.options.security.hashStrength],responseType:'submit_hash'}))
                         break;
                     case "submit_hash":
                         if(hashcash.check(gen, this.options.security.hashStrength, message.response)) {
@@ -109,7 +104,9 @@ class DistriServer extends EventEmitter {
                             }
                             
                         } else if (this.options.security.strict) ws.close()
-                        
+                        else {
+                            console.log('fail')
+                        }
                         break;
                         
                     case 'submit_work':
@@ -133,20 +130,14 @@ class DistriServer extends EventEmitter {
                                 const check = new Map()
                                 this.session[ind].solutions.map(solution => Map.has(solution) ? Map.set(solution, Map.get(solution) + 1) : Map.set(solution, 1))
                                 let greatest = {solution:null,hits:0};
-                                
                                 for (let [key,val] of check) {
                                     if (val > greatest.hits) greatest = {solution:key,hits:val}
                                 }
-                                
                             }
                         }
                         break;
                         
                 }
-                
-                
-                
-                
                 
             })
             
@@ -161,3 +152,41 @@ class DistriServer extends EventEmitter {
 }
 
 module.exports.DistriServer = DistriServer
+
+class DistriClient {
+    constructor(opts, cb) {
+        if(opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
+        this.onwork = function(){}
+        this.options = defaults(opts, {
+            host: 'ws://localhost:8081',
+            availableMethods: ['Node', 'JavaScript']
+        })
+        this.client = new ws(this.options.host)
+        this.client.on('open', cb)
+        this.client.on('message', (m) => {
+            const message = msg.unpack(m)
+            console.log(message)
+            switch(message.responseType) {
+                case 'request':
+                    this.client.send(msg.pack({response:true,responseType:'request'}))
+                    break;
+                case 'submit_hash':
+                    console.log('ay')
+                    this.client.send(msg.pack({
+                        responseType: 'submit_hash',
+                        response: hashcash(message.data[0], message.data[1])
+                    }))
+                    break;
+                case 'submit_work':
+                    const res = this.onwork(message)
+                    this.client.send(msg.pack({
+                        responseType: 'submit_work',
+                        response: res
+                    }))
+                    break;
+            }
+        })
+    }
+}
+
+module.exports.DistriClient = DistriClient
