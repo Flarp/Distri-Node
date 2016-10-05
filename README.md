@@ -58,6 +58,15 @@ __Type__: Integer
 __Default__: 8080
     
 
-#####```work```: 
+######```work```: 
 
-```Security```
+__Description__: An array of the work that will be distributed to clients.
+__Type__: Array
+__Default__: ```[1]```
+
+#####```security```
+
+__Description__: An object with security options.
+__Type__: Object
+__Default__: UNO MOMENTO.
+
