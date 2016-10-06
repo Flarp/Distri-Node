@@ -152,13 +152,15 @@ class DistriServer extends EventEmitter {
                             if (this.options.security.strict) ws.close()
                             return;
                         }
-                        this.session[ind].solutions.push(message.response)
-                        this.session[ind].workers-- 
+                        const index = ind;
+                        ind = -1
+                        this.session[index].solutions.push(message.response)
+                        this.session[index].workers-- 
                         ws.send(msg.pack({responseType:'request'}), {binary:true})
-                        if (this.session[ind].solutions.length === this.options.security.verificationStrength) {
-                            const init = this.session[ind].solutions[0]
-                            if (this.session[ind].solutions.every(solution => solution === init)) {
-                                this.emit('workgroup_complete', this.session[ind].work, init)
+                        if (this.session[index].solutions.length === this.options.security.verificationStrength) {
+                            const init = this.session[index].solutions[0]
+                            if (this.session[index].solutions.every(solution => solution === init)) {
+                                this.emit('workgroup_complete', this.session[index].work, init)
                                 this.solutions++
                                 if (this.solutions === this.session.length) {
                                     this.session = [];
@@ -166,7 +168,7 @@ class DistriServer extends EventEmitter {
                                 }
                             } else {
                                 const check = new Map()
-                                this.session[ind].solutions.map(solution => Map.has(solution) ? Map.set(solution, Map.get(solution) + 1) : Map.set(solution, 1))
+                                this.session[index].solutions.map(solution => Map.has(solution) ? Map.set(solution, Map.get(solution) + 1) : Map.set(solution, 1))
                                 let greatest = {solution:null,hits:0};
                                 for (let [key,val] of check) {
                                     if (val > greatest.hits) greatest = {solution:key,hits:val}

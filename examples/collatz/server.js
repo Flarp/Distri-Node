@@ -14,4 +14,7 @@ Server.on('workgroup_complete', (i,o) => {
 
 Server.on('all_work_complete', () => {
     console.log('Well, what next?')
+    Server.server.close(() => {
+        
+    })
 })
