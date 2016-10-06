@@ -4,15 +4,9 @@ Distributed computing in Node!
 
 ## What is distributed computing?
 
-Alright, so I have this problem, let's say for now it's ```x + 1```. I have ten values that can go in place of x. Let's say it's ```[0,1,2,3,4,5,6,7,8,9]```
+Let's say you and three pals are in Math. At the end, the teacher hands out the homework for the night, and you really _really_ don't want to do it. You and your three pals get together and decide you're going to divide up the nights homework, and share the answers you got with each other, and call it a night. 
 
-The answers would be ```[1, 2, 3, 4...]``` and so on.
-
-But, why waste computing power to do that problem? There are plenty of other computers in the world that could solve that problem without a sweat. And that's what distributed computing is. I can send each one of those numbers off to someone else, and their computer will calculate it, and then the result back. Using the example above, if a user recieved ```1```, they would return ```2``` to the server. 
-
-Another beautiful thing is that, if you do it right, multiple users can join and each take one of those numbers, which for the rest of this documentation, we will call __work__. One user can be calculating one of those values, another user could be calculating another value, all at the same time. If you have ten users, that problem will be solved ten times faster.
-
-Now, obviously a computer can solve the example above in a heartbeat. But when it comes to more complicated mathmatical formulas, computers can get a little tripped up. This library is for a set of values that need to be put into some function, and be given a result. The downfall of this method is that _all values must be independent of each other_. That means the next value in the set cannot be the solution of the previous value in the set. That is a waste of time, and is highly illogical.
+This is distributed computing, except there's a bit more computing involved. Why have one computer sit down and process multiple equations one by one, when users can do it for them? The equations will be _distributed_ to other clients, and they will each independently calculate each one, then send back the result. This makes it much faster to do, and will most certainly take much less time to do for large equation sets.
 
 ## Isn't that what BOINC is?
 
@@ -54,19 +48,82 @@ A class that extends ```events.EventEmitter```.
 ###### ```port```: 
 
 __Description__: The port the server will run off of.
-__Type__: Integer
-__Default__: 8080
-    
 
-######```work```: 
+__Type__: Integer
+
+__Default__: 8080
+
+###### ```work```: 
 
 __Description__: An array of the work that will be distributed to clients.
+
 __Type__: Array
+
 __Default__: ```[1]```
 
-#####```security```
+##### ```security```
 
 __Description__: An object with security options.
+
 __Type__: Object
-__Default__: UNO MOMENTO.
+
+__Default__: 
+```javascript
+{
+    /*
+        * Verification strength is how many times the same piece of work must be completed 
+        * with to be checked. The answer is checked by seeing if all answers are the same, and
+        * if not, satisfy some sort of percentage that will be explained below.
+    */
+    'verificationStrength': 1,
+    
+    /*
+        * Distri-Node uses the hashcashgen algorithm to prevent spam. How it works is it
+        * sends the user a hash to solve using math, and they must send back the correct
+        * answer to a randomly generated equation, which the server already knows.
+        * Hashcash is easy on the server, but requires a little work on the client
+        * side. The strength is how strong (or long) the equation is. It's recommended to
+        * stay under 10 in this case, as higher could stall the user's computer.
+    */
+    
+    'hashStrength': 3,
+    
+    /*
+        * This is where failed verifications are handled. If not all submitted solutions
+        * are the same, each solution will be sorted according to how often they
+        * occur, and then they will be sorted by percent that they take up the 
+        * submitted solutions. So, for example, if the submitted solutions are
+        * [1,1,2,3], [1] takes up 50% of the submitted solutions, [2] takes up
+        * 25% of the submitted solutions, and [3] takes up 25% of the submitted
+        * solutions. Since [1] occurs the most, it will be accepted as the temporary
+        * answer and see if the percent that it takes up of the total solutions
+        * is greater than the equalityPercentage options you put inside the 
+        * security object. If it is greater or equal to it, it will
+        * be accepted as the answer. If not, the solutions will be cleared
+        * and the question will be reset, and available to be worked on
+        * again.
+        *
+        * QUICK TIP: If you don't care about the percentage of the
+        * solution occurance and just want the one that occurs the most,
+        * set this number to 0.
+    */
+    
+    'equalityPercentage': 100,
+    
+    /*
+        * The minumum amount of connected clients required to start distributing work.
+    */
+    
+    'minUsers': 1,
+    
+    /*
+        * If a user sends an invalid request and strict is true, they will be
+        * kicked off the system.
+    */
+    
+    'strict': false
+    
+}
+```
+
 
