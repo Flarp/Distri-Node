@@ -13,7 +13,7 @@ Client.on('work', (work, submit) => {
         } else {
             // if not
             temp = ((temp*3)+1)/2
-            num += 2
+            num++
         }
         num++
     }
