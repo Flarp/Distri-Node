@@ -153,16 +153,26 @@ class DistriServer extends EventEmitter {
 
 module.exports.DistriServer = DistriServer
 
-class DistriClient {
-    constructor(opts, cb) {
+class DistriClient extends EventEmitter {
+    constructor(opts) {
+        super()
         if(opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
         this.onwork = function(){}
         this.options = defaults(opts, {
             host: 'ws://localhost:8081',
             availableMethods: ['Node', 'JavaScript']
         })
+        
         this.client = new ws(this.options.host)
-        this.client.on('open', cb)
+        const submit = (work) => {
+            this.client.send(msg.pack({
+                        responseType: 'submit_work',
+                        response: work
+                }))
+        }
+        this.client.on('open', function() {
+            this.client.send(msg.pack({responseType:'requeset'}))
+        });
         this.client.on('message', (m) => {
             const message = msg.unpack(m)
             console.log(message)
@@ -171,18 +181,13 @@ class DistriClient {
                     this.client.send(msg.pack({response:true,responseType:'request'}))
                     break;
                 case 'submit_hash':
-                    console.log('ay')
                     this.client.send(msg.pack({
                         responseType: 'submit_hash',
                         response: hashcash(message.data[0], message.data[1])
                     }))
                     break;
                 case 'submit_work':
-                    const res = this.onwork(message)
-                    this.client.send(msg.pack({
-                        responseType: 'submit_work',
-                        response: res
-                    }))
+                    this.emit('work', message.data, submit) 
                     break;
             }
         })
