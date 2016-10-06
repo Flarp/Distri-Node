@@ -67,6 +67,8 @@ class DistriServer extends EventEmitter {
             
             let index;
             
+            if (this.session.length === 0) return -1
+            
             if (usingEmpty) {
                 // if we are using the empty array
                 let temp = Math.floor(Math.random() * empty.length)
@@ -206,12 +208,12 @@ class DistriClient extends EventEmitter {
                         response: work
                 }))
         }
-        this.client.on('open', function() {
-            this.client.send(msg.pack({responseType:'requeset'}))
+        
+        this.client.on('open', () => {
+            this.client.send(msg.pack({responseType:'request'}))
         });
         this.client.on('message', (m) => {
             const message = msg.unpack(m)
-            console.log(message)
             switch(message.responseType) {
                 case 'request':
                     this.client.send(msg.pack({response:true,responseType:'request'}))
@@ -223,7 +225,7 @@ class DistriClient extends EventEmitter {
                     }))
                     break;
                 case 'submit_work':
-                    this.emit('work', message.data, submit) 
+                    this.emit('work', message.work, submit) 
                     break;
             }
         })
