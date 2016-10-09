@@ -6,7 +6,7 @@ for (let x = 2; x < 10; x++) {
     arr.push(x)
 }
 
-const Server = new distri.DistriServer({port:8081,work:arr})
+const Server = new distri.DistriServer({port:8081,work:arr,mode:{typing:'static',input:{type:'UInt',byteLength:1},output:{type:'UInt',byteLength:4}}})
 
 Server.on('workgroup_complete', (i,o) => {
     console.log(`Number ${i} factorial is ${o}`)

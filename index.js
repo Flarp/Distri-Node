@@ -10,8 +10,6 @@ class DistriServer extends EventEmitter {
         super()
         if (opts.constructor.name !== 'Object') throw new TypeError('Options must be given in the form of an object')
         
-        const priorities = ['c','cpp','webassembly','node','javascript']
-        
         // explained in the README
         this.options = defaults(opts, {
             port: 8080,
@@ -26,9 +24,15 @@ class DistriServer extends EventEmitter {
             
             mode: {
                 typing: 'dynamic',
-                input: 'UInt16',
-                output: 'UInt16',
-                endianess: 'BE'
+                input: {
+                    type: 'Int',
+                    byteLength: 4
+                },
+                output: {
+                    type: 'Int',
+                    byteLength: 4
+                },
+                endianess: 'BE',
             },
             
             work: [1]
@@ -50,12 +54,15 @@ class DistriServer extends EventEmitter {
         // user count is not met.
         this.userQueue = [];
         
+        const workLength = this.options.work.length;
+        
         // where the work is stored, along with all its metadata
         let addSolution;
         let read;
         if (this.options.mode.typing === 'dynamic') {
             this.session = this.options.work.map(work => {
-                return {workers:0, work:work, solutions:[]}
+                return {workers:0, work:work, solutions:[],solutionCount:0} 
+                // solutionCount is to make sure the API for static and dynamic are the same
             })
         } else if (this.options.mode.typing === 'static') {
             if (this.options.work[0].constructor === 'Array')
@@ -65,88 +72,82 @@ class DistriServer extends EventEmitter {
                 
             const workSize = (() => {
                 switch(this.options.work[0].constructor) {
-                    case Number:
-                    case Float64Array:    
-                        return 8;
-                    case Float32Array:
-                    case Int32Array:
-                    case Uint32Array:
-                        return 4;
-                    case Int16Array:
-                        return 2;
-                    case Int8Array:
-                    case Uint8Array:
-                    case Buffer:
-                        return 1;
                     case String:
                         return Math.ceil((this.options.work.reduce((pre, cur) => {
                             Math.max(pre.length, cur.length) === pre.length ? pre : cur
                         }).length)/4)
+                    default:
+                        return this.options.mode.input.byteLength
                 }
             })();    
             
-            const solutionSize = (() => {
-                switch(this.options.mode.output) {
-                    case 'UInt8':
-                    case 'Int8':
-                        return 1;
-                    case 'UInt16':
-                    case 'Int16':
-                        return 2;
-                    case 'Float':
-                    case 'Int32':
-                    case 'UInt32':
-                        return 4;
-                    default:
-                        throw new TypeError('Output must be one of the values listed in the README')
-                        
-                }
-            })();
+            const solutionSize = this.options.mode.output.byteLength
             
-            const endianess = (this.options.mode.input === 'UInt8' || this.options.mode.input === 'Int8') ? '' : this.options.mode.endianess
+            const endianess = this.options.mode.endianess
             
             const totalSize = 2+workSize+(solutionSize * this.options.security.verificationStrength)
             
             this.buffer = Buffer.allocUnsafe(totalSize * this.options.work.length)
-            console.log(this.buffer)
-            
-            
             for (let x = 0; x < this.options.work.length; x++) {
                 this.buffer.writeUInt8(0, x*totalSize)
-                this.buffer[`write${this.options.mode.input}${endianess}`](this.options.work[x], (x*totalSize)+1, this.options.work[0].constructor === String ? workSize : false, this.options.work[0].constructor === String ? 'ucs2' : false)
+                this.buffer[`write${this.options.mode.input.type}${endianess}`](this.options.work[x], (x*totalSize)+1, workSize, this.options.work[0].constructor === String ? 'ucs2' : false)
                 this.buffer.writeUInt8(0, (1+(x*totalSize)+workSize))
                 for (let z = 0; z < this.options.security.verificationStrength; z++) {
-                    this.buffer[`write${this.options.mode.output}${endianess}`](endianess === '' ? '' : 0, 2+(x*workSize)+(z*solutionSize), endianess === '' ? solutionSize : false, endianess === '' ? 'ucs2' : false)
+                    this.buffer[`write${this.options.mode.output.type}${endianess}`](this.options.work[0].constructor === String ? '' : 0, (2+(x*totalSize)+workSize), workSize, this.options.work[0].constructor === String ? 'ucs2' : false)
                 }
                 
                 
             }
             
+            const solProx = {
+                get: (targ, key) => {
+                    
+                    let returnVal = [];
+                    for (let q = 0; q < this.options.security.verificationStrength; q++) {
+                        returnVal.push(targ[`read${this.options.mode.output.type}${endianess}`](q*solutionSize, solutionSize))
+                    } 
+                    return returnVal[key]
+                },
+                set: (targ, key, val) => {
+                    targ[`write${this.options.mode.output.type}${endianess}`](val, key*solutionSize, solutionSize)
+                    return 1;
+                }
+            }
+            
             const bufProx = {
-                get: (targ, place) => {
-                    switch(place) {
+                get: (targ, key) => {
+                    switch(key) {
                         case 'workers':
-                            console.log(targ)
                             return targ.readInt8(0)
                         case 'work':
-                            return targ[`read${this.options.mode.input}${this.options.mode.input === 'UInt8' || this.options.mode.input === 'Int8' ? '' : this.options.mode.endianess}`](1)
+                            return targ[`read${this.options.mode.input.type}${endianess}`](1, workSize)
+                        case 'solutionCount':
+                            return targ.readUInt8(1+workSize)
                         case 'solutions':
-                            let returnVal = []
-                            for (let x=0; x < this.options.security.verificationStrength; x++) {
-                                returnVal.push(targ[`read${this.options.mode.output}${this.options.mode.output === 'UInt8' || this.options.mode.output === 'Int8' ? '' : this.options.mode.endianess}`])((2+workSize)+(x*solutionSize))
-                            }
-                            return returnVal
+                            return new Proxy(targ.slice((2+workSize), (2+workSize)+(solutionSize*this.options.security.verificationStrength)), solProx)
                     }
                 },
                 set: (targ, key, val) => {
-                    return 'bork'
+                    switch(key) {
+                        case 'workers':
+                            targ.writeUInt8(val, 0)
+                            return 1;
+                        case 'solutionCount':
+                            targ.writeUInt8(val, (1+workSize))
+                            return 1;
+                    }
                 }
             }
             const arrProx = {
                 get: (target, ind) => {
-                    const index = parseInt(ind)
+                    let index;
+                    try {
+                        index = parseInt(ind)
+                    } catch(e) {
+                        return 0
+                    }
                     if (isNaN(index)) {
-                        return this.options.work.length
+                        return workLength
                     } else {
                         return new Proxy(this.buffer.slice((index * totalSize), ((index+1) * totalSize)), bufProx)
                     }
@@ -154,8 +155,7 @@ class DistriServer extends EventEmitter {
             }
             
             this.session = new Proxy({}, arrProx)
-            
-            console.log(this.session[0])
+            this.options.work = undefined;
             
         } else {
             throw new Error('Typing must be either "static" or "dynamic"')
@@ -194,8 +194,8 @@ class DistriServer extends EventEmitter {
                 index = Math.floor(Math.random() * this.session.length)
             }
             // if everything is full
-            if(this.fullProblems >= this.options.work.length) return -1
-            return ((this.session[index].workers + this.session[index].solutions.length) >= this.options.security.verificationStrength)
+            if(this.fullProblems >= this.session.length) return -1
+            return ((this.session[index].workers + this.session[index].solutionCount) >= this.options.security.verificationStrength)
             ? randomIndGenerator() // get another random index if that problem is full
             : index // return that index
         }
@@ -270,7 +270,20 @@ class DistriServer extends EventEmitter {
                         }
                         const index = ind;
                         ind = -1
-                        this.session[index].solutions.push(message.response)
+                        gen = idgen()
+                        if (this.options.mode.typing === 'dynamic') {
+                            this.session[index].solutions.push(message.response)
+                        } else {
+                            try {
+                                this.session[index].solutions[(this.session[index].solutionCount)] = message.response
+                            } catch(e) {
+                                console.log(e)
+                                if (this.options.security.strict) ws.close()
+                                return;
+                            }
+                        }
+                        this.session[index].solutionCount++
+                        
                         this.session[index].workers-- 
                         ws.send(msg.pack({responseType:'request'}), {binary:true})
                         if (this.session[index].solutions.length === this.options.security.verificationStrength) {
