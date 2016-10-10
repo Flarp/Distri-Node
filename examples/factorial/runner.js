@@ -1,7 +1,6 @@
 const msg = require('msgpack')
 
 process.stdout.write('ready')
-process.stdin.resume();
 
 process.stdin.on('data', (m) => {
     const message = msg.unpack(m)
