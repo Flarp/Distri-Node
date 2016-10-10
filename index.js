@@ -4,6 +4,7 @@ const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
 const idgen = require('idgen')
 const hashcash = require('hashcashgen')
+const bs = require('binarysearch')
 
 class DistriServer extends EventEmitter {
     constructor(opts) {
@@ -163,7 +164,7 @@ class DistriServer extends EventEmitter {
             }
             
             this.session = new Proxy({}, arrProx)
-            this.options.work = undefined;
+            
             
         } else {
             throw new Error('Typing must be either "static" or "dynamic"')
@@ -174,33 +175,25 @@ class DistriServer extends EventEmitter {
           * is created. Trying to get a random index in an array with only one available
           * will take a very long time. 
          */
-        const empty = new Int32Array(Math.ceil(this.session.length/20))
         
         // is the above array being used in place of randomly generating indexes?
-        let usingEmpty = false
         
-        setInterval(() => {
-            // check every two minutes of there is less than 5% of work left
-            if (!usingEmpty && (this.session.length*(19/20))<this.solutions) {
-                let lastInd = -1;
-                this.session.map((val, ind) => val.solution.length !== this.options.security.verificationStrength ? empty[lastInd++] = ind : null )
-            }
-        }, 120000)
+        const remaining = [];
+        for (let i = 0; i < this.options.work.length; i++) {
+            remaining.push(i)
+        }
+        
+        this.options.work = undefined;
         
         const randomIndGenerator = () => {
             
             let index;
             
-            if (this.session.length === 0) return -1
             
-            if (usingEmpty) {
-                // if we are using the empty array
-                let temp = Math.floor(Math.random() * empty.length)
-                index = empty[temp]
-            } else {
+            
+            if (this.session.length === 0) return -1
                 // get a random index from the session array.
-                index = Math.floor(Math.random() * this.session.length)
-            }
+                index = remaining[Math.floor(Math.random() * remaining.length)]
             // if everything is full
             if(this.fullProblems >= this.session.length) return -1
             return ((this.session[index].workers + this.session[index].solutionCount) >= this.options.security.verificationStrength)
@@ -316,10 +309,13 @@ class DistriServer extends EventEmitter {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
                                 this.emit('workgroup_complete', this.session[index].work, init)
+                                remaining.splice(bs(remaining,index), 1)
                                 this.solutions++
                                 if (this.solutions === this.session.length) {
                                     this.session = [];
                                     this.emit('all_work_complete')
+                                    this.solutions = 0;
+                                    this.fullProblems = 0;
                                 }
                             } else {
                                 const check = new Map()
@@ -350,7 +346,7 @@ module.exports.DistriServer = DistriServer
 
 class DistriClient {
     constructor(opts) {
-        super()
+        
         if(opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
         const spawn = require('child_process').spawn
         const request = require('request')
