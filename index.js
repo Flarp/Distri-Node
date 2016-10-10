@@ -348,7 +348,7 @@ class DistriServer extends EventEmitter {
 
 module.exports.DistriServer = DistriServer
 
-class DistriClient extends EventEmitter {
+class DistriClient {
     constructor(opts) {
         super()
         if(opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
