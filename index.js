@@ -10,6 +10,8 @@ class DistriServer extends EventEmitter {
         super()
         if (opts.constructor.name !== 'Object') throw new TypeError('Options must be given in the form of an object')
         
+        const priorities = ['gcc','g++','node','javascript']
+        
         // explained in the README
         this.options = defaults(opts, {
             port: 8080,
@@ -20,6 +22,10 @@ class DistriServer extends EventEmitter {
                 equalityPercentage: 100,
                 minUsers: 1,
                 strict: false
+            },
+            
+            files: {
+                
             },
             
             mode: {
@@ -37,6 +43,8 @@ class DistriServer extends EventEmitter {
             
             work: [1]
         })
+        
+        const order = priorities.filter(priority => this.options.files[priority])
         
         this.server = new ws.Server({port:this.options.port})
         
@@ -204,8 +212,8 @@ class DistriServer extends EventEmitter {
             // Generate a starting index in the session array. Starting at -1
             // will let the server know if someone unverified is trying to 
             // request work
+            let sentFile = false;
             let ind = -1;
-            let stage = 0;
             // generate something random for later on
             let gen = idgen()
             this.userCount++
@@ -218,12 +226,16 @@ class DistriServer extends EventEmitter {
                 // tell each user in the queue that they can now request
                 this.userQueue.map(user => user.send(msg.pack({responseType:'request'}), {binary:true}))
                 this.userQueue = [];
-                ws.send(msg.pack({responseType:'request'}), {binary:true})
-                stage = 1;
+                ws.send(msg.pack({responseType:'request'}))
             }
             
             ws.on('message', (m) => {
-                
+                if (this.userCount < this.options.security.minUsers) {
+                    if (this.options.security.strict) {
+                        ws.close()
+                    }
+                    return;
+                }
                 if (m.constructor !== Buffer) {
                     if(this.options.security.strict) ws.close()
                     return;
@@ -238,11 +250,26 @@ class DistriServer extends EventEmitter {
                 }
                 switch(message.responseType) {
                     case "request":
-                        if (stage !== 1) { // if the user is not at the correct stage
-                            if(this.options.security.strict) ws.close() // kick the user if strict mode is on
-                            return;
-                        }
-                        ws.send(msg.pack({data:[gen,this.options.security.hashStrength],responseType:'submit_hash'}))
+                        if (sentFile === false) {
+                            let avail
+                            
+                            try {
+                               avail = message.response.reduce((pre, cur) => order.indexOf(cur) < order.indexOf(pre) ? cur : pre)
+                            } catch (e) {
+                                if (this.options.security.strict) ws.close()
+                                return;
+                            }
+                                 
+                            if (order.indexOf(avail) === -1) {
+                                    ws.send(msg.pack({error:'No work available for supported settings'}))
+                                    ws.close()
+                                    return;
+                                }
+                                ws.send(msg.pack({responseType:'file',response:[this.options.files[avail],avail]}))
+                            }
+                        break;
+                    case 'request_hash':
+                        ws.send(msg.pack({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}))
                         break;
                     case "submit_hash":
                         if(hashcash.check(gen, this.options.security.hashStrength, message.response)) {
@@ -252,14 +279,14 @@ class DistriServer extends EventEmitter {
                                 ws.send(msg.pack({error:'No work available'}))
                             } else {
                                 this.session[ind].workers++
-                                ws.send(msg.pack({responseType:'submit_work', work:this.session[ind].work}))
+                                ws.send(msg.pack({responseType:'submit_work', workType: [this.options.mode.output.type,this.options.mode.output.endianess,this.options.mode.output.byteLength],work:this.session[ind].work}))
                             }
                             
-                        } else if (this.options.security.strict) {
+                        } else {
                             // if the hash is wrong and strict mode is on.
-                            ws.close();
+                            if (this.options.security.strict) ws.close();
                             return;
-                        } else return;
+                        } 
                         
                         break;
                         
@@ -277,7 +304,6 @@ class DistriServer extends EventEmitter {
                             try {
                                 this.session[index].solutions[(this.session[index].solutionCount)] = message.response
                             } catch(e) {
-                                console.log(e)
                                 if (this.options.security.strict) ws.close()
                                 return;
                             }
@@ -285,7 +311,7 @@ class DistriServer extends EventEmitter {
                         this.session[index].solutionCount++
                         
                         this.session[index].workers-- 
-                        ws.send(msg.pack({responseType:'request'}), {binary:true})
+                        ws.send(msg.pack({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}), {binary:true})
                         if (this.session[index].solutions.length === this.options.security.verificationStrength) {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
@@ -326,10 +352,12 @@ class DistriClient extends EventEmitter {
     constructor(opts) {
         super()
         if(opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
-        this.onwork = function(){}
+        const spawn = require('child_process').spawn
+        const request = require('request')
+        const fs = require('fs')
         this.options = defaults(opts, {
             host: 'ws://localhost:8081',
-            availableMethods: ['Node', 'JavaScript']
+            availableMethods: ['gcc', 'javascript']
         })
         
         this.client = new ws(this.options.host)
@@ -340,23 +368,41 @@ class DistriClient extends EventEmitter {
                 }))
         }
         
+        const file = fs.createWriteStream('./file')
+        let runner;
+        
+        process.on('exit', () => {
+            runner.kill('SIGINT')
+        })
+        
         this.client.on('open', () => {
-            this.client.send(msg.pack({responseType:'request'}))
+            this.client.send(msg.pack({responseType:'request',response:['node']}))
         });
         this.client.on('message', (m) => {
             const message = msg.unpack(m)
+            let type, size, endianess; 
             switch(message.responseType) {
-                case 'request':
-                    this.client.send(msg.pack({response:true,responseType:'request'}))
+                case 'file':
+                    request(message.response[0]).pipe(file).on('close', () => {
+                        runner = spawn(message.response[1], ['./file'] , {stdio:['pipe','pipe','pipe']})
+                        runner.stdout.on('data', (data) => {
+                             if(data.toString() === 'ready') {
+                                 this.client.send(msg.pack({response:true,responseType:'request_hash'}))
+                             } else {
+                                 submit(msg.unpack(data).data)
+                             }
+                        })
+                    })
                     break;
                 case 'submit_hash':
                     this.client.send(msg.pack({
                         responseType: 'submit_hash',
-                        response: hashcash(message.data[0], message.data[1])
+                        response: hashcash(message.response[0], message.response[1])
                     }))
                     break;
                 case 'submit_work':
-                    this.emit('work', message.work, submit) 
+                    [type, endianess, size] = message.workType
+                    runner.stdin.write(msg.pack({data:message.work}))
                     break;
             }
         })
@@ -364,3 +410,4 @@ class DistriClient extends EventEmitter {
 }
 
 module.exports.DistriClient = DistriClient
+

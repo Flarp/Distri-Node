@@ -255,7 +255,7 @@ const client = new distri.DistriClient(opts)
 
 ### class ```distri#DistriClient```
 
-It extends ```events.EventEmitter```. It has events.
+Just a boring old class.
 
 #### Constructor options:
 
@@ -268,41 +268,12 @@ __Type__: String
 __Default__: ```ws://localhost:8080```
 
 
-#### Client Events
-
-##### Event ```work```:
-
-__Description__: Is envoked when the client recieves work.
-
-__Return Values__: Will return the work, and callback, which will submit the work.
-
-__Example__:
-```javascript
-Client.on('work', (work, submit) => {
-    // let's pretend we're computing the collatz conjecture
-    
-    // we want to submit how many steps there is to get this number to 1
-    let temp = work;
-    let num = 0;
-    while (temp !== 1) {
-        if (temp%2 === 0) {
-            temp /= 2;
-            num++
-        } else {
-            temp *= 3
-            temp++
-            num++
-        }
-    }
-    
-    submit(num) // and now it's submitted.
-})
-```
 
 #### Websocket Client
 
 ```Client.client``` is a [```ws```](https://github.com/websockets/ws) module client, so everything from that applies there.
 
+# More will be put here soon!
 
 
 
