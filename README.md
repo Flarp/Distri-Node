@@ -44,6 +44,10 @@ Distri comes with a few modules, so I thought it would be nice to explain what e
 
 [```hashcashgen```](https://github.com/carlos8f/node-hashcashgen) - Helps prevent spam by requiring the user to prove they solved a math equation in the form of a hash. I could explain it here, but [this website](http://hashcash.org/) does a much better job.
 
+[```request```](https://github.com/request/request) - Used in the client. Requests the worker file to be executed.
+
+[```binarysearch```](https://github.com/soldair/node-binarysearch) - Searches the index of not solved pieces of work a lot faster than a normal for-loop search.
+
 ## So how do I actually use it?
 
 Cue documentation!
