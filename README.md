@@ -1,5 +1,7 @@
 # Distri-Node
 
+```npm install Flarp/distri-node```
+
 Distributed computing in Node!
 
 ## What is distributed computing?

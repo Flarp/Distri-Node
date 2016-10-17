@@ -2,13 +2,6 @@ const distri = require('../../index.js')
 
 let arr = [];
 
-const express = require('express');
-const app = express()
-
-
-app.use(express.static('../../../distri-js'))
-
-app.listen(process.env.PORT)
 
 for (let x = 2; x < 10000; x++) {
     arr.push(x)
