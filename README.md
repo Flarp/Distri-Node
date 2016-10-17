@@ -67,13 +67,13 @@ A class that extends ```events.EventEmitter```.
 
 #### Constructor options:
 
-###### ```port```: 
+###### ```connection```: 
 
-__Description__: The port the server will run off of.
+__Description__: The options of the WebSocket server.
 
-__Type__: Integer
+__Type__: Object
 
-__Default__: 8080
+For information on what to populate this object with (this object __must__ be present!), check the options part [here](https://github.com/websockets/ws/blob/master/doc/ws.md#new-wsserveroptions-callback).
 
 ###### ```work```: 
 
