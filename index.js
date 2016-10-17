@@ -15,7 +15,9 @@ class DistriServer extends EventEmitter {
         
         // explained in the README
         this.options = defaults(opts, {
-            port: 8080,
+            connection: {
+                port: 8080,
+            },
             
             security: {
                 verificationStrength: 1,
@@ -47,7 +49,8 @@ class DistriServer extends EventEmitter {
         
         const order = priorities.filter(priority => this.options.files[priority])
         
-        this.server = new ws.Server({port:this.options.port})
+        
+        this.server = new ws.Server(this.options.connection)
         
         // a number of the solved problems
         this.solutions = 0;
@@ -195,10 +198,12 @@ class DistriServer extends EventEmitter {
                 // get a random index from the session array.
                 index = remaining[Math.floor(Math.random() * remaining.length)]
             // if everything is full
-            if(this.fullProblems >= this.session.length) return -1
-            return ((this.session[index].workers + this.session[index].solutionCount) >= this.options.security.verificationStrength)
-            ? randomIndGenerator() // get another random index if that problem is full
-            : index // return that index
+            if(this.fullProblems >= this.session.length) {
+                return -1
+            } else {
+                return index;
+            }
+            
         }
         
         this.server.on('connection', (ws) => {
@@ -233,8 +238,15 @@ class DistriServer extends EventEmitter {
                     if(this.options.security.strict) ws.close()
                     return;
                 }
+                let message;
                 
-                const message = msg.unpack(m);
+                try {
+                    message = msg.unpack(m);
+                } catch (e) {
+                    if (this.options.security.strict) ws.close()
+                    return;
+                }
+                
                 // if anything is wrong with the message
                 if ((message.constructor !== Object) || !message.response || !message.responseType) {
                     // kick the user if the server is using strict mode
@@ -288,6 +300,7 @@ class DistriServer extends EventEmitter {
                             if (this.options.security.strict) ws.close()
                             return;
                         }
+                        
                         const index = ind;
                         ind = -1
                         gen = idgen()

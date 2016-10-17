@@ -2,12 +2,22 @@ const distri = require('../../index.js')
 
 let arr = [];
 
+const express = require('express');
+const app = express()
+
+
+app.use(express.static('../../../distri-js'))
+
+app.listen(process.env.PORT)
+
 for (let x = 2; x < 10; x++) {
     arr.push(x)
 }
 
 const Server = new distri.DistriServer({
-    port:8081,
+    connection: {
+        port: 8081,
+    },
     
     work:arr,
     
@@ -22,7 +32,8 @@ const Server = new distri.DistriServer({
             type:'UInt',byteLength:4
         }},
     files: {
-        node: 'https://drive.google.com/uc?export=download&id=0BwAlDZA3kaQAdGNSZUtTdmlfSU0'
+        node: 'https://drive.google.com/uc?export=download&id=0BwAlDZA3kaQAdGNSZUtTdmlfSU0',
+        javascript: 'https://cdn.rawgit.com/Flarp/1f3eb1f2ff14b6d1f4d583e75592db71/raw/daf9b708ea2b788ea185447ddd239b5d3ff43282/javascript-factorial.js'
     }    
 })
 
