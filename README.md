@@ -256,8 +256,6 @@ __Parameters__: One nicely done array.
 
 __Description__: Will add work to the work queue.
 
-__Note__: Will crash if using static mode.
-
 
 ## Distri Client Documentation
 
