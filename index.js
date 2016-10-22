@@ -66,7 +66,7 @@ class DistriServer extends EventEmitter {
         // user count is not met.
         this.userQueue = [];
         
-        const workLength = this.options.work.length;
+        
         
         // where the work is stored, along with all its metadata
         let addSolution;
@@ -82,10 +82,12 @@ class DistriServer extends EventEmitter {
             if (!this.options.work.every(work => work.constructor === this.options.work[0].constructor))
                 throw new TypeError('All entries in work array must be of the same type in static typing')
                 
-            const workSize = (() => {
-                switch(this.options.work[0].constructor) {
+            this.bufferInit = (work) => {
+                const workLength = work.length;
+                const workSize = (() => {
+                switch(work[0].constructor) {
                     case String:
-                        return Math.ceil((this.options.work.reduce((pre, cur) => {
+                        return Math.ceil((work.reduce((pre, cur) => {
                             Math.max(pre.length, cur.length) === pre.length ? pre : cur
                         }).length)/4)
                     default:
@@ -99,13 +101,13 @@ class DistriServer extends EventEmitter {
             
             const totalSize = 2+workSize+(solutionSize * this.options.security.verificationStrength)
             
-            this.buffer = Buffer.allocUnsafe(totalSize * this.options.work.length)
-            for (let x = 0; x < this.options.work.length; x++) {
+            this.buffer = Buffer.allocUnsafe(totalSize * work.length)
+            for (let x = 0; x < work.length; x++) {
                 this.buffer.writeUInt8(0, x*totalSize)
-                this.buffer[`write${this.options.mode.input.type}${endianess}`](this.options.work[x], (x*totalSize)+1, workSize, this.options.work[0].constructor === String ? 'ucs2' : false)
+                this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x*totalSize)+1, workSize, work[0].constructor === String ? 'ucs2' : false)
                 this.buffer.writeUInt8(0, (1+(x*totalSize)+workSize))
                 for (let z = 0; z < this.options.security.verificationStrength; z++) {
-                    this.buffer[`write${this.options.mode.output.type}${endianess}`](this.options.work[0].constructor === String ? '' : 0, (2+(x*totalSize)+workSize), workSize, this.options.work[0].constructor === String ? 'ucs2' : false)
+                    this.buffer[`write${this.options.mode.output.type}${endianess}`](work[0].constructor === String ? '' : 0, (2+(x*totalSize)+workSize), workSize, work[0].constructor === String ? 'ucs2' : false)
                 }
                 
                 
@@ -167,23 +169,17 @@ class DistriServer extends EventEmitter {
             }
             
             this.session = new Proxy({}, arrProx)
-            
+        }    
+                
+        this.bufferInit(this.options.work)
             
         } else {
             throw new Error('Typing must be either "static" or "dynamic"')
         }
         
-        /*
-          * To speed things up, when only 5% of work is left, an array of the indexes of available work
-          * is created. Trying to get a random index in an array with only one available
-          * will take a very long time. 
-         */
-        
-        // is the above array being used in place of randomly generating indexes?
-        
-        const remaining = [];
+        this.remaining = [];
         for (let i = 0; i < this.options.work.length; i++) {
-            remaining.push(i)
+            this.remaining.push(i)
         }
         
         this.options.work = undefined;
@@ -192,11 +188,9 @@ class DistriServer extends EventEmitter {
             
             let index;
             
-            
-            
             if (this.session.length === 0) return -1
                 // get a random index from the session array.
-                index = remaining[Math.floor(Math.random() * remaining.length)]
+                index = this.remaining[Math.floor(Math.random() * this.remaining.length)]
             // if everything is full
             if(this.fullProblems >= this.session.length) {
                 return -1
@@ -322,7 +316,7 @@ class DistriServer extends EventEmitter {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
                                 this.emit('workgroup_complete', this.session[index].work, init)
-                                remaining.splice(bs(remaining,index), 1)
+                                this.remaining.splice(bs(this.remaining,index), 1)
                                 this.solutions++
                                 if (this.solutions === this.session.length) {
                                     this.session = [];
@@ -352,6 +346,32 @@ class DistriServer extends EventEmitter {
                 }
             })
         })
+    }
+    
+    addWork(work) {
+        if (work.constructor.name !== 'Array') throw new TypeError('Added work must be in the form of an array')
+        
+        switch(this.options.mode.typing) {
+            case 'dynamic':
+                work.map(work => {
+                    this.remaining.push(this.session.push({work,solutions:[],workers:0,solutionCount:0})-1)
+                })
+                this.remaining.sort((a, b) => {
+                    if (a > b) {
+                        return 1
+                    } else {
+                        return -1
+                    }
+                })
+                break;
+            case 'static':
+                this.bufferInit(work)
+                this.remaining = [];
+                for (let i = 0; i < work.length; i++) {
+                    this.remaining.push(i)
+                }
+                break;
+        }
     }
 }
 
@@ -389,7 +409,7 @@ class DistriClient {
         });
         this.client.on('message', (m) => {
             const message = msg.unpack(m)
-            let type, size, endianess; 
+            console.log(message)
             switch(message.responseType) {
                 case 'file':
                     request(message.response[0]).pipe(file).on('close', () => {
@@ -410,7 +430,6 @@ class DistriClient {
                     }))
                     break;
                 case 'submit_work':
-                    [type, endianess, size] = message.workType
                     runner.stdin.write(msg.pack({data:message.work}))
                     break;
             }

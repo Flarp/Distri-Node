@@ -2,13 +2,6 @@ const distri = require('../../index.js')
 
 let arr = [];
 
-const express = require('express');
-const app = express()
-
-
-app.use(express.static('../../../distri-js'))
-
-app.listen(process.env.PORT)
 
 for (let x = 2; x < 10; x++) {
     arr.push(x)
@@ -41,9 +34,10 @@ Server.on('workgroup_complete', (i,o) => {
     console.log(`Number ${i} factorial is ${o}`)
 })
 
+
 Server.on('all_work_complete', () => {
-    console.log('Well, what next?')
-    Server.server.close(() => {
-        
-    })
+        console.log('Well, what next?')
+        Server.server.close(() => {
+            
+        })
 })
