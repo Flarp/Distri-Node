@@ -1,4 +1,8 @@
 const ws = require('ws')
+
+'test'
+
+
 const msg = require('msgpack')
 const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
