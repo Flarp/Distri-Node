@@ -3,13 +3,17 @@ const distri = require('../../index.js')
 let arr = [];
 
 
-for (let x = 2; x < 10000; x++) {
+for (let x = 2; x < 10; x++) {
     arr.push(x)
 }
 
 const Server = new distri.DistriServer({
     connection:{
         port:8081
+    },
+    
+    security: {
+        verificationStrength: 2
     },
     
     work:arr,

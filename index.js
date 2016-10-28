@@ -1,8 +1,4 @@
 const ws = require('ws')
-
-'test'
-
-
 const msg = require('msgpack')
 const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
@@ -300,6 +296,7 @@ class DistriServer extends EventEmitter {
                         }
                         
                         const index = ind;
+                        
                         ind = -1
                         gen = idgen()
                         if (this.options.mode.typing === 'dynamic') {
@@ -316,7 +313,7 @@ class DistriServer extends EventEmitter {
                         
                         this.session[index].workers-- 
                         ws.send(msg.pack({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}), {binary:true})
-                        if (this.session[index].solutions.length === this.options.security.verificationStrength) {
+                        if (this.session[index].solutionCount === this.options.security.verificationStrength) {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
                                 this.emit('workgroup_complete', this.session[index].work, init)
@@ -330,7 +327,7 @@ class DistriServer extends EventEmitter {
                                 }
                             } else {
                                 const check = new Map()
-                                this.session[index].solutions.map(solution => Map.has(solution) ? Map.set(solution, Map.get(solution) + 1) : Map.set(solution, 1))
+                                this.session[index].solutions.map(solution => check.has(solution) ? check.set(solution, check.get(solution) + 1) : check.set(solution, 1))
                                 let greatest = {solution:null,hits:0};
                                 for (let [key,val] of check) {
                                     if (val > greatest.hits) greatest = {solution:key,hits:val}
@@ -413,7 +410,6 @@ class DistriClient {
         });
         this.client.on('message', (m) => {
             const message = msg.unpack(m)
-            console.log(message)
             switch(message.responseType) {
                 case 'file':
                     request(message.response[0]).pipe(file).on('close', () => {

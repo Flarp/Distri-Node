@@ -1,0 +1,21 @@
+const msg = require('msgpack')
+
+process.stdout.write('ready')
+
+process.stdin.on('data', (m) => {
+    const message = msg.unpack(m)
+    let init = message.data
+    let num = 0;
+    
+      while (init !== 1) {
+      if (init % 2 === 0) {
+        init /= 2
+      } else {
+        init = ((init*3)+1)/2
+        num++
+      }
+      num++
+    }
+    
+    process.stdout.write(msg.pack({data:num}))
+})
