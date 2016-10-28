@@ -145,7 +145,13 @@ __Default__:
         * kicked off the system.
     */
     
-    'strict': false
+    'strict': false,
+    
+    /*
+        * Sets the timeout (in seconds) of how long until an inactive user is kicked.
+    */
+    
+    'timeout': 0 // a timeout of 0 will turn it off
     
 }
 ```

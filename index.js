@@ -24,7 +24,8 @@ class DistriServer extends EventEmitter {
                 hashStrength: 3,
                 equalityPercentage: 100,
                 minUsers: 1,
-                strict: false
+                strict: false,
+                timeout: 0
             },
             
             files: {
@@ -280,9 +281,11 @@ class DistriServer extends EventEmitter {
                                 ws.send(msg.pack({error:'No work available'}))
                             } else {
                                 this.session[ind].workers++
-                                timeout = setTimeout(() => {
-                                    ws.close()
-                                }, this.options.security.timeout*1000)
+                                if (this.options.security.timeout) {
+                                    timeout = setTimeout(() => {
+                                        ws.close()
+                                    }, this.options.security.timeout*1000)
+                                }
                                 ws.send(msg.pack({responseType:'submit_work', workType: [this.options.mode.output.type,this.options.mode.output.endianess,this.options.mode.output.byteLength],work:this.session[ind].work}))
                                 if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
                                     this.remaining.splice(bs(this.remaining, ind), 1)
@@ -303,7 +306,9 @@ class DistriServer extends EventEmitter {
                             return;
                         }
                         
-                        clearTimeout(timeout)
+                        if (this.options.security.timeout) {
+                            clearTimeout(timeout)
+                        }
                         
                         const index = ind;
                         
