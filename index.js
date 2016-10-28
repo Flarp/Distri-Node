@@ -55,9 +55,6 @@ class DistriServer extends EventEmitter {
         // a number of the solved problems
         this.solutions = 0;
         
-        // a number of problems with the maximum of clients and
-        // a number of solved problems
-        this.fullProblems = 0;
         
         // how many connected users there are
         this.userCount = 0;
@@ -192,7 +189,7 @@ class DistriServer extends EventEmitter {
                 // get a random index from the session array.
                 index = this.remaining[Math.floor(Math.random() * this.remaining.length)]
             // if everything is full
-            if(this.fullProblems >= this.session.length) {
+            if(this.remaining.length === 0) {
                 return -1
             } else {
                 return index;
@@ -201,6 +198,11 @@ class DistriServer extends EventEmitter {
         }
         
         this.server.on('connection', (ws) => {
+            
+            // initialize the setTimeout for kicking the user
+            let timeout;
+            
+            
             // Generate a starting index in the session array. Starting at -1
             // will let the server know if someone unverified is trying to 
             // request work
@@ -278,7 +280,13 @@ class DistriServer extends EventEmitter {
                                 ws.send(msg.pack({error:'No work available'}))
                             } else {
                                 this.session[ind].workers++
+                                timeout = setTimeout(() => {
+                                    ws.close()
+                                }, this.options.security.timeout*1000)
                                 ws.send(msg.pack({responseType:'submit_work', workType: [this.options.mode.output.type,this.options.mode.output.endianess,this.options.mode.output.byteLength],work:this.session[ind].work}))
+                                if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
+                                    this.remaining.splice(bs(this.remaining, ind), 1)
+                                }
                             }
                             
                         } else {
@@ -294,6 +302,8 @@ class DistriServer extends EventEmitter {
                             if (this.options.security.strict) ws.close()
                             return;
                         }
+                        
+                        clearTimeout(timeout)
                         
                         const index = ind;
                         
@@ -317,13 +327,12 @@ class DistriServer extends EventEmitter {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
                                 this.emit('workgroup_complete', this.session[index].work, init)
-                                this.remaining.splice(bs(this.remaining,index), 1)
+                                if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining,index), 1)
                                 this.solutions++
                                 if (this.solutions === this.session.length) {
                                     this.session = [];
                                     this.emit('all_work_complete')
                                     this.solutions = 0;
-                                    this.fullProblems = 0;
                                 }
                             } else {
                                 const check = new Map()
@@ -331,6 +340,24 @@ class DistriServer extends EventEmitter {
                                 let greatest = {solution:null,hits:0};
                                 for (let [key,val] of check) {
                                     if (val > greatest.hits) greatest = {solution:key,hits:val}
+                                }
+                                
+                                if ((greatest.hits/this.options.security.verificationStrength)>=(this.options.security.equalityPercentages/100)) {
+                                    this.emit('workgroup_complete', this.session[index].work, init)
+                                    if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining,index), 1)
+                                    this.solutions++
+                                    if (this.solutions === this.session.length) {
+                                        this.session = [];
+                                        this.emit('all_work_complete')
+                                        this.solutions = 0;
+                                    }
+                                } else {
+                                    this.session[index].solutions.forEach(solution => solution = 0)
+                                    this.session[index].workers = 0;
+                                    this.session[index].solutionCount = 0;
+                                    if (bs(this.remaining, index) === -1) {
+                                        bs.insert(this.remaining, index)
+                                    }
                                 }
                             }
                         }

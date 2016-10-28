@@ -13,7 +13,8 @@ const Server = new distri.DistriServer({
     },
     
     security: {
-        verificationStrength: 2
+        verificationStrength: 1,
+        timeout: 5
     },
     
     work:arr,
