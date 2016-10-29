@@ -1,9 +1,0 @@
-const msg = require('msgpack')
-
-process.stdout.write('ready')
-
-process.stdin.on('data', (m) => {
-    const message = msg.unpack(m)
-    
-    process.stdout.write(msg.pack({data:1.123}))
-})
