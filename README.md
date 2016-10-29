@@ -50,6 +50,8 @@ Distri comes with a few modules, so I thought it would be nice to explain what e
 
 [```binarysearch```](https://github.com/soldair/node-binarysearch) - Searches the index of not solved pieces of work a lot faster than a normal for-loop search.
 
+[```death```](https://github.com/jprichardson/node-death) - Catches the client exiting so temporary files can be deleted.
+
 ## So how do I actually use it?
 
 Cue documentation!
