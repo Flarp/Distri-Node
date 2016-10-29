@@ -3,7 +3,7 @@ const distri = require('../../index.js')
 let arr = [];
 
 
-for (let x = 2; x < 10; x++) {
+for (let x = 2; x < 1000; x++) {
     arr.push(x)
 }
 

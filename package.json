@@ -13,6 +13,7 @@
   "license": "BSD-3-Clause",
   "dependencies": {
     "binarysearch": "^1.0.0",
+    "death": "^1.0.0",
     "deep-defaults": "^1.0.4",
     "hashcashgen": "^1.0.1",
     "idgen": "^2.0.2",

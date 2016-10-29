@@ -238,7 +238,15 @@ class DistriServer extends EventEmitter {
             
         }
         
+        let maxTime = 0;
+        
         this.server.on('connection', (ws) => {
+            
+            // time the user started computing the problem
+            let start;
+            
+            // time the user returned the result
+            let end;
             
             // initialize the setTimeout for kicking the user
             let timeout;
@@ -326,6 +334,7 @@ class DistriServer extends EventEmitter {
                                         ws.close()
                                     }, this.options.security.timeout*1000)
                                 }
+                                start = Date.now()
                                 ws.send(msg.pack({responseType:'submit_work', workType: [this.options.mode.output.type,this.options.mode.output.endianess,this.options.mode.output.byteLength],work:this.session[ind].work}))
                                 if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
                                     this.remaining.splice(bs(this.remaining, ind), 1)
@@ -349,6 +358,10 @@ class DistriServer extends EventEmitter {
                         if (this.options.security.timeout) {
                             clearTimeout(timeout)
                         }
+                        
+                        end = Date.now()
+                        
+                        if (maxTime < end-start) maxTime = end-start
                         
                         const index = ind;
                         
@@ -374,6 +387,9 @@ class DistriServer extends EventEmitter {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
                                 this.emit('workgroup_complete', this.session[index].work, init)
+                                if (this.options.security.dynamicTimeouts) {
+                                    this.options.security.timeout = maxTime/1000
+                                }
                                 if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining,index), 1)
                                 this.solutions++
                                 if (this.solutions === this.session.length) {
@@ -391,6 +407,9 @@ class DistriServer extends EventEmitter {
                                 
                                 if ((greatest.hits/this.options.security.verificationStrength)>=(this.options.security.equalityPercentages/100)) {
                                     this.emit('workgroup_complete', this.session[index].work, init)
+                                    if (this.options.security.dynamicTimeouts) {
+                                        this.options.security.timeout = maxTime/1000
+                                    }
                                     if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining,index), 1)
                                     this.solutions++
                                     if (this.solutions === this.session.length) {
@@ -455,6 +474,9 @@ module.exports.DistriServer = DistriServer
 class DistriClient {
     constructor(opts) {
         
+        const filename = idgen()
+        const onDeath = require('death')
+        
         if(opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
         const spawn = require('child_process').spawn
         const request = require('request')
@@ -472,12 +494,15 @@ class DistriClient {
                 }))
         }
         
-        const file = fs.createWriteStream('./file')
+        const file = fs.createWriteStream(`./${filename}`)
         let runner;
         
-        process.on('exit', () => {
-            runner.kill('SIGINT')
+        onDeath((sig, err) => {
+            if (runner) runner.kill('SIGINT')
+            fs.unlinkSync(`./${filename}`)
         })
+        
+        
         
         this.client.on('open', () => {
             this.client.send(msg.pack({responseType:'request',response:['node']}))
@@ -487,7 +512,7 @@ class DistriClient {
             switch(message.responseType) {
                 case 'file':
                     request(message.response[0]).pipe(file).on('close', () => {
-                        runner = spawn(message.response[1], ['./file'] , {stdio:['pipe','pipe','pipe']})
+                        runner = spawn(message.response[1], [`./${filename}`] , {stdio:['pipe','pipe','pipe']})
                         runner.stdout.on('data', (data) => {
                              if(data.toString() === 'ready') {
                                  this.client.send(msg.pack({response:true,responseType:'request_hash'}))

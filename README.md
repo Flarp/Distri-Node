@@ -151,7 +151,17 @@ __Default__:
         * Sets the timeout (in seconds) of how long until an inactive user is kicked.
     */
     
-    'timeout': 0 // a timeout of 0 will turn it off
+    'timeout': 0, // a timeout of 0 will turn it off
+    
+    /*
+        * If this is set to true, the timeouts will be adjusted after every
+        * completed workgroup to the slowest person to complete it who was not
+        * timed out. This will gradually shrink the timeout to a place where 
+        * it blocks out people who are lingering and people with very very old
+        * computers.
+    */
+    
+    'dynamicTimeouts': false
     
 }
 ```
