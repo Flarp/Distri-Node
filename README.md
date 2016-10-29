@@ -180,10 +180,13 @@ __Default__:
     'typing': 'dynamic',
     
     /*
-        * There are three types for 'type. Either 'Int', 'UInt', or ''. If
+        * There are five types for type. Either 'Int', 'UInt', 'Float', 'Double' ''. If
         * left empty, it will default to reading a string. Byte length is
         * how many bytes the number will take up. If it is a string, this
         * number will be ignored.
+        *
+        * Note: Float and Double for type will ignore the byteLength property, as
+        * the byte length for Float is four, and the byte length for Double is eight.
     */
     'input': {
         'type': 'Int',
@@ -336,12 +339,12 @@ This is the outline for a worker file.
 
 To add files, simply a files object in the server options with keys corresponding to the chart below, and values of the _online links_ to the files. As of now, archives are not supported (zip, tar.gz, 7z) but it is planned to be in the future.
 
-|```node```| A Node.js file. Uses ```process.stdout.write``` for output, and has an event listener on ```process.stdin```, which has data packed using MessagePack.   |
+|Type| Description|
 |------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ```g++```        | Currently not working. Uses standard library ```cout``` for output (```std::cout<< some_result << std::endl```) and ```cin``` for input (```cin >> work```) |
 | ```gcc```        | Currently not working. Uses ```printf()``` for output and ```fgets()`` for input.                                                                           |
-| ```javascript``` | In progress. Uses Web Worker messages to communicate with the client. Will not work in any other environment then the browser.                              |
-
+| ```javascript``` | Uses Web Worker messages to comunicate.  The ```onmessage``` function in the webworker will recieve an object. Access ```receivedObj.data.work``` for the work. When sending back the result using ```postMessage(result```, it must be put inside an object or else an error will be thrown. The work must be stored in the ```work``` property of the object.|
+| ```node``` | A Node.js file, communicates using ```process.stdout.write()``` and ```process.stdin.on(data, callback)``` |
 So, for an example -
 
 ```javascript

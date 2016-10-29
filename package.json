@@ -10,7 +10,7 @@
     "distributed"
   ],
   "author": "Flarp",
-  "license": "BSD",
+  "license": "BSD-3-Clause",
   "dependencies": {
     "binarysearch": "^1.0.0",
     "deep-defaults": "^1.0.4",

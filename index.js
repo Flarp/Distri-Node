@@ -83,29 +83,70 @@ class DistriServer extends EventEmitter {
             this.bufferInit = (work) => {
                 const workLength = work.length;
                 const workSize = (() => {
-                switch(work[0].constructor) {
-                    case String:
+                switch(work[0].constructor.name) {
+                    case "String":
                         return Math.ceil((work.reduce((pre, cur) => {
                             Math.max(pre.length, cur.length) === pre.length ? pre : cur
                         }).length)/4)
+                    case "Float":
+                        return 4;
+                    case "Double":
+                        return 8;
                     default:
                         return this.options.mode.input.byteLength
                 }
             })();    
             
-            const solutionSize = this.options.mode.output.byteLength
+            const solutionSize = (() => {
+                switch(this.options.mode.output.type) {
+                    case "Float":
+                        return 4;
+                    case "Double":
+                        return 8;
+                    default:
+                        return this.options.mode.output.byteLength
+                }
+            })();
             
             const endianess = this.options.mode.endianess
             
             const totalSize = 2+workSize+(solutionSize * this.options.security.verificationStrength)
             
             this.buffer = Buffer.allocUnsafe(totalSize * work.length)
+            
+            const midArg = this.options.mode.output.type === 'Double' || this.options.mode.output.type === 'Float' ? false : solutionSize
+            
             for (let x = 0; x < work.length; x++) {
                 this.buffer.writeUInt8(0, x*totalSize)
-                this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x*totalSize)+1, workSize, work[0].constructor === String ? 'ucs2' : false)
+                switch(this.options.mode.input.type) {
+                    case 'UInt':
+                    case 'Int':
+                        this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x*totalSize)+1, this.options.mode.input.byteLength)
+                        break;
+                    case '':
+                        this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x*totalSize)+1, this.options.mode.input.byteLength, 'usc2')
+                        break;
+                    case 'Float':
+                    case 'Double':
+                        this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x*totalSize)+1)
+                        break;
+                }
                 this.buffer.writeUInt8(0, (1+(x*totalSize)+workSize))
                 for (let z = 0; z < this.options.security.verificationStrength; z++) {
-                    this.buffer[`write${this.options.mode.output.type}${endianess}`](work[0].constructor === String ? '' : 0, (2+(x*totalSize)+workSize), workSize, work[0].constructor === String ? 'ucs2' : false)
+                    switch(this.options.mode.input.type) {
+                        case 'UInt':
+                        case 'Int':
+                            this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x*totalSize)+1, this.options.mode.input.byteLength)
+                            break;
+                        case '':
+                            this.buffer[`write${this.options.mode.input.type}${endianess}`]('', (2+(x*totalSize)+workSize), workSize, 'usc2')
+                            break;
+                        case 'Float':
+                        case 'Double':
+                            this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x*totalSize)+1)
+                            break;
+                    }
+                    this.buffer[`write${this.options.mode.output.type}${endianess}`](work[0].constructor === String ? '' : 0, (2+(x*totalSize)+workSize), workSize, work[0].constructor.name === "String" ? 'ucs2' : false)
                 }
                 
                 
@@ -113,26 +154,26 @@ class DistriServer extends EventEmitter {
             
             const solProx = {
                 get: (targ, key) => {
-                    
-                    let returnVal = [];
+                    const returnVal = [];
                     for (let q = 0; q < this.options.security.verificationStrength; q++) {
-                        returnVal.push(targ[`read${this.options.mode.output.type}${endianess}`](q*solutionSize, solutionSize))
+                        returnVal.push(targ[`read${this.options.mode.output.type}${endianess}`](q*solutionSize, midArg))
                     } 
                     return returnVal[key]
                 },
                 set: (targ, key, val) => {
-                    targ[`write${this.options.mode.output.type}${endianess}`](val, key*solutionSize, solutionSize)
+                    targ[`write${this.options.mode.output.type}${endianess}`](val, key*solutionSize, midArg)
                     return 1;
                 }
             }
             
             const bufProx = {
                 get: (targ, key) => {
+                    let tempArg = this.options.mode.input.type === 'Double' || this.options.mode.input.type === 'Float' ? false : workSize
                     switch(key) {
                         case 'workers':
-                            return targ.readInt8(0)
+                            return targ.readUInt8(0)
                         case 'work':
-                            return targ[`read${this.options.mode.input.type}${endianess}`](1, workSize)
+                            return targ[`read${this.options.mode.input.type}${endianess}`](1, tempArg)
                         case 'solutionCount':
                             return targ.readUInt8(1+workSize)
                         case 'solutions':
@@ -183,7 +224,6 @@ class DistriServer extends EventEmitter {
         this.options.work = undefined;
         
         const randomIndGenerator = () => {
-            
             let index;
             
             if (this.session.length === 0) return -1
@@ -324,9 +364,11 @@ class DistriServer extends EventEmitter {
                                 return;
                             }
                         }
+                        
                         this.session[index].solutionCount++
                         
                         this.session[index].workers-- 
+                        
                         ws.send(msg.pack({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}), {binary:true})
                         if (this.session[index].solutionCount === this.options.security.verificationStrength) {
                             const init = this.session[index].solutions[0]
