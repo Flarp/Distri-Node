@@ -1,5 +1,4 @@
 const ws = require('ws')
-const msg = require('msgpack')
 const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
 const idgen = require('idgen')
@@ -267,9 +266,9 @@ class DistriServer extends EventEmitter {
                 this.userQueue.push(ws)
             } else {
                 // tell each user in the queue that they can now request
-                this.userQueue.map(user => user.send(msg.pack({responseType:'request'}), {binary:true}))
+                this.userQueue.map(user => user.send(JSON.stringify({responseType:'request'})))
                 this.userQueue = [];
-                ws.send(msg.pack({responseType:'request'}))
+                ws.send(JSON.stringify({responseType:'request'}))
             }
             
             ws.on('message', (m) => {
@@ -279,14 +278,10 @@ class DistriServer extends EventEmitter {
                     }
                     return;
                 }
-                if (m.constructor !== Buffer) {
-                    if(this.options.security.strict) ws.close()
-                    return;
-                }
                 let message;
                 
                 try {
-                    message = msg.unpack(m);
+                    message = JSON.parse(m);
                 } catch (e) {
                     if (this.options.security.strict) ws.close()
                     return;
@@ -311,22 +306,22 @@ class DistriServer extends EventEmitter {
                             }
                                  
                             if (order.indexOf(avail) === -1) {
-                                    ws.send(msg.pack({error:'No work available for supported settings'}))
+                                    ws.send(JSON.stringify({error:'No work available for supported settings'}))
                                     ws.close()
                                     return;
                                 }
-                                ws.send(msg.pack({responseType:'file',response:[this.options.files[avail],avail]}))
+                                ws.send(JSON.stringify({responseType:'file',response:[this.options.files[avail],avail]}))
                             }
                         break;
                     case 'request_hash':
-                        ws.send(msg.pack({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}))
+                        ws.send(JSON.stringify({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}))
                         break;
                     case "submit_hash":
                         if(hashcash.check(gen, this.options.security.hashStrength, message.response)) {
                             gen = idgen()
                             ind = randomIndGenerator()
                             if (ind === -1) {
-                                ws.send(msg.pack({error:'No work available'}))
+                                ws.send(JSON.stringify({error:'No work available'}))
                             } else {
                                 this.session[ind].workers++
                                 if (this.options.security.timeout) {
@@ -335,7 +330,7 @@ class DistriServer extends EventEmitter {
                                     }, this.options.security.timeout*1000)
                                 }
                                 start = Date.now()
-                                ws.send(msg.pack({responseType:'submit_work', workType: [this.options.mode.output.type,this.options.mode.output.endianess,this.options.mode.output.byteLength],work:this.session[ind].work}))
+                                ws.send(JSON.stringify({responseType:'submit_work', workType: [this.options.mode.output.type,this.options.mode.output.endianess,this.options.mode.output.byteLength],work:this.session[ind].work}))
                                 if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
                                     this.remaining.splice(bs(this.remaining, ind), 1)
                                 }
@@ -382,7 +377,7 @@ class DistriServer extends EventEmitter {
                         
                         this.session[index].workers-- 
                         
-                        ws.send(msg.pack({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}), {binary:true})
+                        ws.send(JSON.stringify({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}))
                         if (this.session[index].solutionCount === this.options.security.verificationStrength) {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
@@ -488,7 +483,7 @@ class DistriClient {
         
         this.client = new ws(this.options.host)
         const submit = (work) => {
-            this.client.send(msg.pack({
+            this.client.send(JSON.stringify({
                         responseType: 'submit_work',
                         response: work
                 }))
@@ -505,31 +500,31 @@ class DistriClient {
         
         
         this.client.on('open', () => {
-            this.client.send(msg.pack({responseType:'request',response:['node']}))
+            this.client.send(JSON.stringify({responseType:'request',response:['node']}))
         });
         this.client.on('message', (m) => {
-            const message = msg.unpack(m)
+            const message = JSON.parse(m)
             switch(message.responseType) {
                 case 'file':
                     request(message.response[0]).pipe(file).on('close', () => {
                         runner = spawn(message.response[1], [`./${filename}`] , {stdio:['pipe','pipe','pipe']})
                         runner.stdout.on('data', (data) => {
                              if(data.toString() === 'ready') {
-                                 this.client.send(msg.pack({response:true,responseType:'request_hash'}))
+                                 this.client.send(JSON.stringify({response:true,responseType:'request_hash'}))
                              } else {
-                                 submit(msg.unpack(data).data)
+                                 submit(JSON.parse(data).data)
                              }
                         })
                     })
                     break;
                 case 'submit_hash':
-                    this.client.send(msg.pack({
+                    this.client.send(JSON.stringify({
                         responseType: 'submit_hash',
                         response: hashcash(message.response[0], message.response[1])
                     }))
                     break;
                 case 'submit_work':
-                    runner.stdin.write(msg.pack({data:message.work}))
+                    runner.stdin.write(JSON.stringify({data:message.work}))
                     break;
             }
         })

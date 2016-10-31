@@ -34,7 +34,7 @@ const Server = new distri.DistriServer({
     
     files: {
         'javascript': 'cdn.rawgit.com/Flarp/d75e5676179442516ef9458e5ecc32cb/raw/5d523ebd760d3cf3d1f38ea34751bb55c660bfcc/javascript-collatz.js',
-        'node': 'https://cdn.rawgit.com/Flarp/e08a9dc96dfe19264052c14773f6d0d4/raw/8f124d6f51fc93b1ffb3b795411b464f4e20c187/node-collatz.js'
+        'node': 'https://gist.githubusercontent.com/Flarp/e08a9dc96dfe19264052c14773f6d0d4/raw/2f629e8409c4022e67b215778c1a98b575b6079d/node-collatz.js'
     }
     
 })
