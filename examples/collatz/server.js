@@ -42,3 +42,10 @@ const Server = new distri.DistriServer({
 Server.on('workgroup_complete', (i,o) => {
     console.log(`Number ${i} took ${o} steps using the Collatz conjecture to reach 1.`)
 })
+
+Server.on('all_work_complete', () => {
+    console.log('Well, what next?')
+    Server.server.close(() => {
+       
+    })
+})
