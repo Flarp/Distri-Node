@@ -241,6 +241,9 @@ class DistriServer extends EventEmitter {
         
         this.server.on('connection', (ws) => {
             
+            // creates a dummy login. this is not used in the node module, but is required for compatibility with other modules
+            let login = idgen()
+            
             // time the user started computing the problem
             let start;
             
@@ -314,7 +317,7 @@ class DistriServer extends EventEmitter {
                             }
                         break;
                     case 'request_hash':
-                        ws.send(JSON.stringify({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}))
+                        ws.send(JSON.stringify({responseType:'submit_hash',response:[gen,this.options.security.hashStrength,login]}))
                         break;
                     case "submit_hash":
                         if(hashcash.check(gen, this.options.security.hashStrength, message.response)) {
@@ -360,6 +363,8 @@ class DistriServer extends EventEmitter {
                         
                         const index = ind;
                         
+                        login = idgen()
+                        
                         ind = -1
                         gen = idgen()
                         if (this.options.mode.typing === 'dynamic') {
@@ -377,7 +382,7 @@ class DistriServer extends EventEmitter {
                         
                         this.session[index].workers-- 
                         
-                        ws.send(JSON.stringify({responseType:'submit_hash',response:[gen,this.options.security.hashStrength]}))
+                        ws.send(JSON.stringify({responseType:'submit_hash',response:[gen,this.options.security.hashStrength,login]}))
                         if (this.session[index].solutionCount === this.options.security.verificationStrength) {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
@@ -485,7 +490,8 @@ class DistriClient {
         const submit = (work) => {
             this.client.send(JSON.stringify({
                         responseType: 'submit_work',
-                        response: work
+                        response: work,
+                        login
                 }))
         }
         
@@ -497,13 +503,14 @@ class DistriClient {
             fs.unlinkSync(`./${filename}`)
         })
         
-        
+        let login;
         
         this.client.on('open', () => {
             this.client.send(JSON.stringify({responseType:'request',response:['node']}))
         });
         this.client.on('message', (m) => {
             const message = JSON.parse(m)
+            console.log(message)
             switch(message.responseType) {
                 case 'file':
                     request(message.response[0]).pipe(file).on('close', () => {
@@ -518,9 +525,12 @@ class DistriClient {
                     })
                     break;
                 case 'submit_hash':
+                    login = message.login
+                    console.log(login)
                     this.client.send(JSON.stringify({
                         responseType: 'submit_hash',
-                        response: hashcash(message.response[0], message.response[1])
+                        response: hashcash(message.response[0], message.response[1]),
+                        login: login
                     }))
                     break;
                 case 'submit_work':

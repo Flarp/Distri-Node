@@ -15,7 +15,7 @@
     "binarysearch": "^1.0.0",
     "death": "^1.0.0",
     "deep-defaults": "^1.0.4",
-    "hashcashgen": "^1.0.1",
+    "hashcashgen": "Flarp/node-hashcashgen",
     "idgen": "^2.0.2",
     "request": "^2.75.0",
     "ws": "^1.1.1"
