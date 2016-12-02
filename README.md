@@ -244,13 +244,21 @@ __Default__: None
 
 __Description__: Will fire when a group of workers have submitted their solutions and it passes the tests.
 
-__Return Values__: Will return the input and output work into a callback.
+__Return Values__: Will return the input, output, a resolve, and reject function into the callback. Either the resolve or reject function _must be called_ for the program to continue. Calling ```resolve()``` will mark the solution as legitmate and leave the solution be. If ```reject()``` is called, the problem will be reset, and made available again. This method allows for extra checking after Distri's internal checking to make sure values are not being falsified.
 
 __Example__: 
 ```javascript
+// Let's say your problem is generating primes
 Server.on('workgroup_complete', (input, output) => {
-    // if you're using redis, you could do this -
-    redis.hmset(someHash, input, output) // :D
+    // you can do a simple check to make sure that the number is not divisible by 2
+    if (output%2 === 0) {
+        reject() 
+        // the number is not prime, so put it back.
+    } else {
+        // if you're using redis, you could do this -
+        redis.hmset(someHash, input, output) // :D
+        .then(resolve) // mark the problem as okay
+    }
 })
 ```
 

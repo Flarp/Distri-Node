@@ -386,27 +386,10 @@ class DistriServer extends EventEmitter {
                         if (this.session[index].solutionCount === this.options.security.verificationStrength) {
                             const init = this.session[index].solutions[0]
                             if (this.session[index].solutions.every(solution => solution === init)) {
-                                this.emit('workgroup_complete', this.session[index].work, init)
-                                if (this.options.security.dynamicTimeouts) {
-                                    this.options.security.timeout = maxTime/1000
-                                }
-                                if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining,index), 1)
-                                this.solutions++
-                                if (this.solutions === this.session.length) {
-                                    this.session = [];
-                                    this.emit('all_work_complete')
-                                    this.solutions = 0;
-                                }
-                            } else {
-                                const check = new Map()
-                                this.session[index].solutions.map(solution => check.has(solution) ? check.set(solution, check.get(solution) + 1) : check.set(solution, 1))
-                                let greatest = {solution:null,hits:0};
-                                for (let [key,val] of check) {
-                                    if (val > greatest.hits) greatest = {solution:key,hits:val}
-                                }
-                                
-                                if ((greatest.hits/this.options.security.verificationStrength)>=(this.options.security.equalityPercentages/100)) {
-                                    this.emit('workgroup_complete', this.session[index].work, init)
+                                new Promise((resolve, reject) => {
+                                    this.emit('workgroup_complete', this.session[index].work, init, resolve, reject)
+                                })
+                                .then(() => {
                                     if (this.options.security.dynamicTimeouts) {
                                         this.options.security.timeout = maxTime/1000
                                     }
@@ -417,6 +400,48 @@ class DistriServer extends EventEmitter {
                                         this.emit('all_work_complete')
                                         this.solutions = 0;
                                     }
+                                })
+                                .catch(() => {
+                                    this.session[index].solutions.forEach(solution => solution = 0)
+                                    this.session[index].workers = 0;
+                                    this.session[index].solutionCount = 0;
+                                    if (bs(this.remaining, index) === -1) {
+                                        bs.insert(this.remaining, index)
+                                    }
+                                })
+                                
+                            } else {
+                                const check = new Map()
+                                this.session[index].solutions.map(solution => check.has(solution) ? check.set(solution, check.get(solution) + 1) : check.set(solution, 1))
+                                let greatest = {solution:null,hits:0};
+                                for (let [key,val] of check) {
+                                    if (val > greatest.hits) greatest = {solution:key,hits:val}
+                                }
+                                
+                                if ((greatest.hits/this.options.security.verificationStrength)>=(this.options.security.equalityPercentages/100)) {
+                                    new Promise((resolve, reject) => {
+                                        this.emit('workgroup_complete', this.session[index].work, init, resolve, reject)
+                                    })
+                                    .then(() => {
+                                        if (this.options.security.dynamicTimeouts) {
+                                            this.options.security.timeout = maxTime/1000
+                                        }
+                                        if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining,index), 1)
+                                        this.solutions++
+                                        if (this.solutions === this.session.length) {
+                                            this.session = [];
+                                            this.emit('all_work_complete')
+                                            this.solutions = 0;
+                                        }
+                                    })
+                                    .catch(() => {
+                                        this.session[index].solutions.forEach(solution => solution = 0)
+                                        this.session[index].workers = 0;
+                                        this.session[index].solutionCount = 0;
+                                        if (bs(this.remaining, index) === -1) {
+                                            bs.insert(this.remaining, index)
+                                        }
+                                    })
                                 } else {
                                     this.session[index].solutions.forEach(solution => solution = 0)
                                     this.session[index].workers = 0;

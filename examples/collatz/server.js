@@ -3,7 +3,7 @@ const distri = require('../../index.js')
 let arr = [];
 
 
-for (let x = 2; x < 1000; x++) {
+for (let x = 2; x < 10; x++) {
     arr.push(x)
 }
 
@@ -39,8 +39,9 @@ const Server = new distri.DistriServer({
     
 })
 
-Server.on('workgroup_complete', (i,o) => {
-    console.log(`Number ${i} took ${o} steps using the Collatz conjecture to reach 1.`)
+Server.on('workgroup_complete', (i,o,res,rej) => {
+    console.log(i, o)
+    res()
 })
 
 Server.on('all_work_complete', () => {
