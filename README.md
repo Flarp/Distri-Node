@@ -283,7 +283,7 @@ Server.on('all_work_complete', () => {
 
 __Parameters__: One nicely done array.
 
-__Description__: Will add work to the work queue.
+__Description__: What is done with this function depends on what mode you're using. If you're using dynamic typing, this will simply add the work to the queue. If you are using static mode, this will replace the work in the queue with the work supplied to the function. It will throw in static mode if the values inside are not all the same type.
 
 
 ## Distri Client Documentation
