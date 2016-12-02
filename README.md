@@ -249,7 +249,7 @@ __Return Values__: Will return the input, output, a resolve, and reject function
 __Example__: 
 ```javascript
 // Let's say your problem is generating primes
-Server.on('workgroup_complete', (input, output) => {
+Server.on('workgroup_complete', (input, output, resolve, reject) => {
     // you can do a simple check to make sure that the number is not divisible by 2
     if (output%2 === 0) {
         reject() 
