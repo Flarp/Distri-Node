@@ -550,8 +550,7 @@ class DistriClient {
                     })
                     break;
                 case 'submit_hash':
-                    login = message.login
-                    console.log(login)
+                    login = message.login || ""
                     this.client.send(JSON.stringify({
                         responseType: 'submit_hash',
                         response: hashcash(message.response[0], message.response[1]),
