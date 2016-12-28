@@ -10,9 +10,9 @@ class DistriServer extends EventEmitter {
     super()
     if (opts.constructor.name !== 'Object') throw new TypeError('Options must be given in the form of an object')
 
-    const priorities = ['gcc', 'g++', 'node', 'javascript']
+    const priorities = ['webassembly', 'node', 'javascript']
 
-        // explained in the README
+    // explained in the README
     this.options = defaults(opts, {
       connection: {
         port: 8080
@@ -21,7 +21,6 @@ class DistriServer extends EventEmitter {
       security: {
         verificationStrength: 1,
         hashStrength: 3,
-        equalityPercentage: 100,
         minUsers: 1,
         strict: false,
         timeout: 0
@@ -31,19 +30,6 @@ class DistriServer extends EventEmitter {
 
       },
 
-      mode: {
-        typing: 'dynamic',
-        input: {
-          type: 'Int',
-          byteLength: 4
-        },
-        output: {
-          type: 'Int',
-          byteLength: 4
-        },
-        endianess: 'BE'
-      },
-
       work: [1]
     })
 
@@ -51,160 +37,20 @@ class DistriServer extends EventEmitter {
 
     this.server = new WebSocket.Server(this.options.connection)
 
-        // a number of the solved problems
+    // a number of the solved problems
     this.solutions = 0
 
-        // how many connected users there are
+    // how many connected users there are
     this.userCount = 0
 
-        // A cue of websocket client objects if the
-        // user count is not met.
+    // A queue of websocket client objects if the
+    // user count is not met.
     this.userQueue = []
 
         // where the work is stored, along with all its metadata
-    if (this.options.mode.typing === 'dynamic') {
-      this.session = this.options.work.map(work => {
-        return {workers: 0, work: work, solutions: [], solutionCount: 0}
-                // solutionCount is to make sure the API for static and dynamic are the same
-      })
-    } else if (this.options.mode.typing === 'static') {
-      if (this.options.work[0].constructor === 'Array') { throw new TypeError('There cannot be arrays inside arrays as of now') }
-      if (!this.options.work.every(work => work.constructor === this.options.work[0].constructor)) {
-        throw new TypeError('All entries in work array must be of the same type in static typing')
-      }
-
-      this.bufferInit = (work) => {
-        const workLength = work.length
-        const workSize = (() => {
-          switch (work[0].constructor.name) {
-            case 'String':
-              return Math.ceil((work.reduce((pre, cur) => {
-                Math.max(pre.length, cur.length) === pre.length ? pre : cur
-              }).length) / 4)
-            case 'Float':
-              return 4
-            case 'Double':
-              return 8
-            default:
-              return this.options.mode.input.byteLength
-          }
-        })()
-
-        const solutionSize = (() => {
-          switch (this.options.mode.output.type) {
-            case 'Float':
-              return 4
-            case 'Double':
-              return 8
-            default:
-              return this.options.mode.output.byteLength
-          }
-        })()
-
-        const endianess = this.options.mode.endianess
-
-        const totalSize = 2 + workSize + (solutionSize * this.options.security.verificationStrength)
-
-        this.buffer = Buffer.allocUnsafe(totalSize * work.length)
-
-        const midArg = this.options.mode.output.type === 'Double' || this.options.mode.output.type === 'Float' ? false : solutionSize
-
-        for (let x = 0; x < work.length; x++) {
-          this.buffer.writeUInt8(0, x * totalSize)
-          switch (this.options.mode.input.type) {
-            case 'UInt':
-            case 'Int':
-              this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x * totalSize) + 1, this.options.mode.input.byteLength)
-              break
-            case '':
-              this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x * totalSize) + 1, this.options.mode.input.byteLength, 'usc2')
-              break
-            case 'Float':
-            case 'Double':
-              this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x * totalSize) + 1)
-              break
-          }
-          this.buffer.writeUInt8(0, (1 + (x * totalSize) + workSize))
-          for (let z = 0; z < this.options.security.verificationStrength; z++) {
-            switch (this.options.mode.input.type) {
-              case 'UInt':
-              case 'Int':
-                this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x * totalSize) + 1, this.options.mode.input.byteLength)
-                break
-              case '':
-                this.buffer[`write${this.options.mode.input.type}${endianess}`]('', (2 + (x * totalSize) + workSize), workSize, 'usc2')
-                break
-              case 'Float':
-              case 'Double':
-                this.buffer[`write${this.options.mode.input.type}${endianess}`](work[x], (x * totalSize) + 1)
-                break
-            }
-            this.buffer[`write${this.options.mode.output.type}${endianess}`](work[0].constructor === String ? '' : 0, (2 + (x * totalSize) + workSize), workSize, work[0].constructor.name === 'String' ? 'ucs2' : false)
-          }
-        }
-
-        const solProx = {
-          get: (targ, key) => {
-            const returnVal = []
-            for (let q = 0; q < this.options.security.verificationStrength; q++) {
-              returnVal.push(targ[`read${this.options.mode.output.type}${endianess}`](q * solutionSize, midArg))
-            }
-            return returnVal[key]
-          },
-          set: (targ, key, val) => {
-            targ[`write${this.options.mode.output.type}${endianess}`](val, key * solutionSize, midArg)
-            return 1
-          }
-        }
-
-        const bufProx = {
-          get: (targ, key) => {
-            let tempArg = this.options.mode.input.type === 'Double' || this.options.mode.input.type === 'Float' ? false : workSize
-            switch (key) {
-              case 'workers':
-                return targ.readUInt8(0)
-              case 'work':
-                return targ[`read${this.options.mode.input.type}${endianess}`](1, tempArg)
-              case 'solutionCount':
-                return targ.readUInt8(1 + workSize)
-              case 'solutions':
-                return new Proxy(targ.slice((2 + workSize), (2 + workSize) + (solutionSize * this.options.security.verificationStrength)), solProx)
-            }
-          },
-          set: (targ, key, val) => {
-            switch (key) {
-              case 'workers':
-                targ.writeUInt8(val, 0)
-                return 1
-              case 'solutionCount':
-                targ.writeUInt8(val, (1 + workSize))
-                return 1
-            }
-          }
-        }
-        const arrProx = {
-          get: (target, ind) => {
-            let index
-            try {
-              index = parseInt(ind)
-            } catch (e) {
-              return 0
-            }
-            if (isNaN(index)) {
-              return workLength
-            } else {
-              return new Proxy(this.buffer.slice((index * totalSize), ((index + 1) * totalSize)), bufProx)
-            }
-          }
-        }
-
-        this.session = new Proxy({}, arrProx)
-      }
-
-      this.bufferInit(this.options.work)
-    } else {
-      throw new Error('Typing must be either "static" or "dynamic"')
-    }
+    this.session = this.options.work.map(work => {
+      return {workers: 0, work: work, solutions: [], solutionCount: 0}
+    })
 
     this.remaining = []
     for (let i = 0; i < this.options.work.length; i++) {
@@ -217,9 +63,9 @@ class DistriServer extends EventEmitter {
       let index
 
       if (this.session.length === 0) return -1
-                // get a random index from the session array.
-      index = this.remaining[Math.floor(Math.random() * this.remaining.length)]
-            // if everything is full
+      // get a random index from the session array.
+      index = this.remaining[(Math.random() * this.remaining.length) | 0]
+      // if everything is full
       if (this.remaining.length === 0) {
         return -1
       } else {
@@ -230,33 +76,30 @@ class DistriServer extends EventEmitter {
     let maxTime = 0
 
     this.server.on('connection', (ws) => {
-            // creates a dummy login. this is not used in the node module, but is required for compatibility with other modules
-      let login = idgen()
-
-            // time the user started computing the problem
+      // time the user started computing the problem
       let start
 
-            // time the user returned the result
+      // time the user returned the result
       let end
 
-            // initialize the setTimeout for kicking the user
+      // initialize the setTimeout for kicking the user
       let timeout
 
-            // Generate a starting index in the session array. Starting at -1
-            // will let the server know if someone unverified is trying to
-            // request work
+      // Generate a starting index in the session array. Starting at -1
+      // will let the server know if someone unverified is trying to
+      // request work
       let sentFile = false
       let ind = -1
-            // generate something random for later on
+      // generate something random for later on
       let gen = idgen()
       this.userCount++
 
-            // if the minimum user count has not been met
+      // if the minimum user count has not been met
       if (this.userCount < this.options.security.minUsers) {
                 // queue the user
         this.userQueue.push(ws)
       } else {
-                // tell each user in the queue that they can now request
+        // tell each user in the queue that they can now request
         this.userQueue.map(user => user.send(JSON.stringify({responseType: 'request'})))
         this.userQueue = []
         ws.send(JSON.stringify({responseType: 'request'}))
@@ -278,9 +121,9 @@ class DistriServer extends EventEmitter {
           return
         }
 
-                // if anything is wrong with the message
+        // if anything is wrong with the message
         if ((message.constructor !== Object) || !message.response || !message.responseType) {
-                    // kick the user if the server is using strict mode
+          // kick the user if the server is using strict mode
           if (this.options.security.strict) ws.close()
           return
         }
@@ -305,7 +148,7 @@ class DistriServer extends EventEmitter {
             }
             break
           case 'request_hash':
-            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength, login]}))
+            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength]}))
             break
           case 'submit_hash':
             if (hashcash.check(gen, this.options.security.hashStrength, message.response)) {
@@ -327,7 +170,7 @@ class DistriServer extends EventEmitter {
                 }
               }
             } else {
-                            // if the hash is wrong and strict mode is on.
+              // if the hash is wrong and strict mode is on.
               if (this.options.security.strict) ws.close()
               return
             }
@@ -350,26 +193,15 @@ class DistriServer extends EventEmitter {
 
             const index = ind
 
-            login = idgen()
-
             ind = -1
             gen = idgen()
-            if (this.options.mode.typing === 'dynamic') {
-              this.session[index].solutions.push(message.response)
-            } else {
-              try {
-                this.session[index].solutions[(this.session[index].solutionCount)] = message.response
-              } catch (e) {
-                if (this.options.security.strict) ws.close()
-                return
-              }
-            }
+            this.session[index].solutions.push(message.response)
 
             this.session[index].solutionCount++
 
             this.session[index].workers--
 
-            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength, login]}))
+            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength]}))
             if (this.session[index].solutionCount === this.options.security.verificationStrength) {
               this.pending++
               new Promise((resolve, reject) => {
@@ -414,32 +246,24 @@ class DistriServer extends EventEmitter {
   }
 
   addWork (work) {
+    let emitReady = false
+    if (this.session.length === 0) emitReady = true
     if (work.constructor.name !== 'Array') throw new TypeError('Added work must be in the form of an array')
 
-    switch (this.options.mode.typing) {
-      case 'dynamic':
-        work.map(work => {
-          this.remaining.push(this.session.push({work, solutions: [], workers: 0, solutionCount: 0}) - 1)
-        })
-        this.remaining.sort((a, b) => {
-          if (a > b) {
-            return 1
-          } else {
-            return -1
-          }
-        })
-        break
-      case 'static':
-        this.bufferInit(work)
-        this.remaining = []
-        for (let i = 0; i < work.length; i++) {
-          this.remaining.push(i)
-        }
-        break
-    }
+    work.map(work => {
+      this.remaining.push(this.session.push({work, solutions: [], workers: 0, solutionCount: 0}) - 1)
+    })
+    this.remaining.sort((a, b) => {
+      if (a > b) {
+        return 1
+      } else {
+        return -1
+      }
+    })
+    if (emitReady) this.server.clients.map(client => client.send(JSON.stringify({responseType: 'request'})))
   }
 
-  checkPercentage (solutions, percentage, resolve, reject) {
+  CheckPercentage (solutions, percentage, resolve, reject) {
     const init = solutions[0]
     if (solutions.every(solution => solution === init)) {
       resolve()
