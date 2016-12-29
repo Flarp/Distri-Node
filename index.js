@@ -309,12 +309,12 @@ class DistriClient {
       }))
     }
 
-    const file = fs.createWriteStream(`./${filename}`)
+    const file = fs.createWriteStream(`./distri-file`)
     let runner
 
     onDeath((sig, err) => {
       if (runner) runner.kill('SIGINT')
-      fs.unlinkSync(`./${filename}`)
+      fs.unlinkSync(`./distri-file`)
     })
 
     let login
@@ -328,7 +328,7 @@ class DistriClient {
       switch (message.responseType) {
         case 'file':
           request(message.response[0]).pipe(file).on('close', () => {
-            runner = spawn(message.response[1], [`./${filename}`], {stdio: ['pipe', 'pipe', 'pipe']})
+            runner = spawn(message.response[1], [`./distri-file`], {stdio: ['pipe', 'pipe', 'pipe']})
             runner.stdout.on('data', (data) => {
               if (data.toString() === 'ready') {
                 this.client.send(JSON.stringify({response: true, responseType: 'request_hash'}))
