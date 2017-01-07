@@ -54,7 +54,11 @@ Distri comes with a few modules, so I thought it would be nice to explain what e
 
 ## How do I use it?
 
-The library is going under some massive changes, and so is this documentation. Check back later.
+Distri-Node is split into two seperate parts internally, a Node server, and a Node client. We'll go over each one, starting with the server (what you're probably here for).
+
+### Distri.DistriServer 
+
+A class that extends Node's EventEmitter. 
 
 ## What are runners?
 

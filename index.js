@@ -41,8 +41,6 @@ class DistriServer extends EventEmitter {
     this.solutions = 0
 
     // the number of currently pending problems
-    this.pending = 0
-
     // how many connected users there are
     this.userCount = 0
 
@@ -208,11 +206,11 @@ class DistriServer extends EventEmitter {
             if (this.session[index].solutionCount === this.options.security.verificationStrength) {
               this.pending++
               new Promise((resolve, reject) => {
-                this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions[0], resolve, reject)
+                this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions, resolve, reject)
               })
-                .then(() => {
+                .then((answer) => {
                   this.pending--
-                  this.emit('workgroup_accepted', this.session[index].work, this.session[index].solutions[0])
+                  this.emit('workgroup_accepted', this.session[index].work, answer)
                   if (this.options.security.dynamicTimeouts) {
                     this.options.security.timeout = maxTime / 1000
                   }
@@ -269,7 +267,7 @@ class DistriServer extends EventEmitter {
   CheckPercentage (solutions, percentage, resolve, reject) {
     const init = solutions[0]
     if (solutions.every(solution => solution === init)) {
-      resolve()
+      resolve(init)
     } else {
       const check = new Map()
       solutions.map(solution => check.has(solution) ? check.set(solution, check.get(solution) + 1) : check.set(solution, 1))
@@ -279,7 +277,7 @@ class DistriServer extends EventEmitter {
       }
 
       if ((greatest.hits / this.options.security.verificationStrength) >= (percentage / 100)) {
-        resolve()
+        resolve(greatest.solution)
       } else {
         reject()
       }
