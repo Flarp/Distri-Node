@@ -37,8 +37,11 @@ class DistriServer extends EventEmitter {
 
     this.server = new WebSocket.Server(this.options.connection)
 
-    // a number of the solved problems
+    // the number of the solved problems
     this.solutions = 0
+
+    // the number of currently pending problems
+    this.pending = 0
 
     // how many connected users there are
     this.userCount = 0
@@ -62,7 +65,7 @@ class DistriServer extends EventEmitter {
     const randomIndGenerator = () => {
       let index
 
-      if (this.session.length === 0) return -1
+      if (this.session.length === 0 || this.pending + this.solutions > this.session.length) return -1
       // get a random index from the session array.
       index = this.remaining[(Math.random() * this.remaining.length) | 0]
       // if everything is full
@@ -288,7 +291,6 @@ module.exports.DistriServer = DistriServer
 
 class DistriClient {
   constructor (opts) {
-    const filename = idgen()
     const onDeath = require('death')
 
     if (opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
@@ -324,7 +326,6 @@ class DistriClient {
     })
     this.client.on('message', (m) => {
       const message = JSON.parse(m)
-      console.log(message)
       switch (message.responseType) {
         case 'file':
           request(message.response[0]).pipe(file).on('close', () => {
