@@ -4,7 +4,7 @@
   "description": "A distributed computing module for Node.js",
   "main": "index.js",
   "scripts": {
-    "test": "./node_modules/.bin/mocha --reporter spec"
+    "test": "./node_modules/.bin/serial-mocha test/test.js"
   },
   "keywords": [
     "distributed"
@@ -26,6 +26,11 @@
     "eslint-config-standard": "^6.2.1",
     "eslint-plugin-promise": "^3.4.0",
     "eslint-plugin-standard": "^2.0.1",
-    "mocha": "^3.1.0"
+    "mocha": "^3.2.0",
+    "mocha-standard": "^1.0.0",
+    "protractor": "^4.0.14",
+    "serial-mocha": "0.0.4",
+    "standard": "^8.6.0",
+    "zombie": "^5.0.5"
   }
 }

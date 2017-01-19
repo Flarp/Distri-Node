@@ -18,19 +18,6 @@ const Server = new distri.DistriServer({
 
   work: arr,
 
-  mode: {
-    typing: 'static',
-    input: {
-      type: 'UInt',
-      byteLength: 2
-    },
-
-    output: {
-      type: 'UInt',
-      byteLength: 4
-    }
-  },
-
   files: {
     'javascript': 'cdn.rawgit.com/Flarp/d75e5676179442516ef9458e5ecc32cb/raw/5d523ebd760d3cf3d1f38ea34751bb55c660bfcc/javascript-collatz.js',
     'node': 'https://gist.githubusercontent.com/Flarp/e08a9dc96dfe19264052c14773f6d0d4/raw/2f629e8409c4022e67b215778c1a98b575b6079d/node-collatz.js'
@@ -39,8 +26,8 @@ const Server = new distri.DistriServer({
 })
 
 Server.on('workgroup_complete', (i, o, res, rej) => {
-  console.log(i, o)
-  res()
+  console.log(i, o[0])
+  res(o[0])
 })
 
 Server.on('all_work_complete', () => {
