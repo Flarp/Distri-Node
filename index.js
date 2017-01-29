@@ -10,7 +10,7 @@ class DistriServer extends EventEmitter {
     super()
     if (opts.constructor.name !== 'Object') throw new TypeError('Options must be given in the form of an object')
 
-    const priorities = ['webassembly', 'node', 'javascript']
+    const priorities = ['node', 'javascript']
 
     // explained in the README
     this.options = defaults(opts, {
@@ -23,7 +23,7 @@ class DistriServer extends EventEmitter {
         hashStrength: 3,
         minUsers: 1,
         strict: false,
-        timeout: 0
+        timeout: false
       },
 
       files: {
@@ -97,7 +97,7 @@ class DistriServer extends EventEmitter {
 
       // if the minimum user count has not been met
       if (this.userCount < this.options.security.minUsers) {
-                // queue the user
+        // queue the user
         this.userQueue.push(ws)
       } else {
         // tell each user in the queue that they can now request
@@ -123,7 +123,7 @@ class DistriServer extends EventEmitter {
         }
 
         // if anything is wrong with the message
-        if ((message.constructor !== Object) || !message.response || !message.responseType) {
+        if ((message.constructor !== Object) || message.response === undefined || !message.responseType) {
           // kick the user if the server is using strict mode
           if (this.options.security.strict) ws.close()
           return
@@ -162,10 +162,10 @@ class DistriServer extends EventEmitter {
                 if (this.options.security.timeout) {
                   timeout = setTimeout(() => {
                     ws.close()
-                  }, this.options.security.timeout * 1000)
+                  }, this.options.security.timeout)
                 }
                 start = Date.now()
-                ws.send(JSON.stringify({responseType: 'submit_work', workType: [this.options.mode.output.type, this.options.mode.output.endianess, this.options.mode.output.byteLength], work: this.session[ind].work}))
+                ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
                 if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
                   this.remaining.splice(bs(this.remaining, ind), 1)
                 }
@@ -179,7 +179,7 @@ class DistriServer extends EventEmitter {
             break
 
           case 'submit_work':
-            if (!message.response) {
+            if (message.response === undefined) {
               if (this.options.security.strict) ws.close()
               return
             }
@@ -201,14 +201,13 @@ class DistriServer extends EventEmitter {
             this.session[index].solutionCount++
 
             this.session[index].workers--
-
             ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength]}))
             if (this.session[index].solutionCount === this.options.security.verificationStrength) {
               this.pending++
               new Promise((resolve, reject) => {
                 this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions, resolve, reject)
               })
-                .then((answer) => {
+                .then(answer => {
                   this.pending--
                   this.emit('workgroup_accepted', this.session[index].work, answer)
                   if (this.options.security.dynamicTimeouts) {
