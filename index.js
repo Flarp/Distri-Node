@@ -22,15 +22,12 @@ class DistriServer extends EventEmitter {
         verificationStrength: 1,
         hashStrength: 3,
         minUsers: 1,
-        strict: false,
-        timeout: false
       },
 
       files: {
 
       },
 
-      work: [1]
     })
 
     const order = priorities.filter(priority => this.options.files[priority])
@@ -47,18 +44,10 @@ class DistriServer extends EventEmitter {
     // A queue of websocket client objects if the
     // user count is not met.
     this.userQueue = []
-
+    this.session = []
         // where the work is stored, along with all its metadata
-    this.session = this.options.work.map(work => {
-      return {workers: 0, work: work, solutions: [], solutionCount: 0}
-    })
 
     this.remaining = []
-    for (let i = 0; i < this.options.work.length; i++) {
-      this.remaining.push(i)
-    }
-
-    this.options.work = undefined
 
     const randomIndGenerator = () => {
       let index
@@ -77,14 +66,6 @@ class DistriServer extends EventEmitter {
     let maxTime = 0
 
     this.server.on('connection', (ws) => {
-      // time the user started computing the problem
-      let start
-
-      // time the user returned the result
-      let end
-
-      // initialize the setTimeout for kicking the user
-      let timeout
 
       // Generate a starting index in the session array. Starting at -1
       // will let the server know if someone unverified is trying to
@@ -108,9 +89,6 @@ class DistriServer extends EventEmitter {
 
       ws.on('message', (m) => {
         if (this.userCount < this.options.security.minUsers) {
-          if (this.options.security.strict) {
-            ws.close()
-          }
           return
         }
         let message
@@ -118,14 +96,12 @@ class DistriServer extends EventEmitter {
         try {
           message = JSON.parse(m)
         } catch (e) {
-          if (this.options.security.strict) ws.close()
           return
         }
 
         // if anything is wrong with the message
         if ((message.constructor !== Object) || message.response === undefined || !message.responseType) {
           // kick the user if the server is using strict mode
-          if (this.options.security.strict) ws.close()
           return
         }
         switch (message.responseType) {
@@ -136,7 +112,6 @@ class DistriServer extends EventEmitter {
               try {
                 avail = message.response.reduce((pre, cur) => order.indexOf(cur) < order.indexOf(pre) ? cur : pre)
               } catch (e) {
-                if (this.options.security.strict) ws.close()
                 return
               }
 
@@ -159,12 +134,6 @@ class DistriServer extends EventEmitter {
                 ws.send(JSON.stringify({error: 'No work available'}))
               } else {
                 this.session[ind].workers++
-                if (this.options.security.timeout) {
-                  timeout = setTimeout(() => {
-                    ws.close()
-                  }, this.options.security.timeout)
-                }
-                start = Date.now()
                 ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
                 if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
                   this.remaining.splice(bs(this.remaining, ind), 1)
@@ -172,7 +141,6 @@ class DistriServer extends EventEmitter {
               }
             } else {
               // if the hash is wrong and strict mode is on.
-              if (this.options.security.strict) ws.close()
               return
             }
 
@@ -180,17 +148,8 @@ class DistriServer extends EventEmitter {
 
           case 'submit_work':
             if (message.response === undefined) {
-              if (this.options.security.strict) ws.close()
               return
             }
-
-            if (this.options.security.timeout) {
-              clearTimeout(timeout)
-            }
-
-            end = Date.now()
-
-            if (maxTime < end - start) maxTime = end - start
 
             const index = ind
 
@@ -210,9 +169,6 @@ class DistriServer extends EventEmitter {
                 .then(answer => {
                   this.pending--
                   this.emit('workgroup_accepted', this.session[index].work, answer)
-                  if (this.options.security.dynamicTimeouts) {
-                    this.options.security.timeout = maxTime / 1000
-                  }
                   if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining, index), 1)
                   this.solutions++
                   if (this.solutions === this.session.length) {
