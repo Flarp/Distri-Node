@@ -96,8 +96,6 @@ class DistriServer extends EventEmitter {
           return
         }
         
-        console.log(message)
-        
         const workGetter = () => {
           ind = randomIndGenerator()
           if (ind === -1) {
