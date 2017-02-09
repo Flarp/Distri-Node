@@ -1,8 +1,6 @@
 const WebSocket = require('ws')
 const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
-const idgen = require('idgen')
-const hashcash = require('hashcashgen')
 const bs = require('binarysearch')
 
 class DistriServer extends EventEmitter {
@@ -73,7 +71,6 @@ class DistriServer extends EventEmitter {
       let sentFile = false
       let ind = -1
       // generate something random for later on
-      let gen = idgen()
       this.userCount++
 
       // if the minimum user count has not been met
@@ -98,73 +95,77 @@ class DistriServer extends EventEmitter {
         } catch (e) {
           return
         }
+        
+        console.log(message)
+        
+        const workGetter = () => {
+          ind = randomIndGenerator()
+          if (ind === -1) {
+            ws.send(JSON.stringify({error: 'No work available'}))
+          } else {
+            this.session[ind].workers++
+            ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
+            if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
+              this.remaining.splice(bs(this.remaining, ind), 1)
+            }
+          }
+        }
 
         // if anything is wrong with the message
         if ((message.constructor !== Object) || message.response === undefined || !message.responseType) {
           // kick the user if the server is using strict mode
           return
         }
-        switch (message.responseType) {
-          case 'request':
-            if (sentFile === false) {
-              let avail
+        
+        if (message.responseType === 'request') {
+          if (sentFile === false) {
+            let avail
 
-              try {
-                avail = message.response.reduce((pre, cur) => order.indexOf(cur) < order.indexOf(pre) ? cur : pre)
-              } catch (e) {
-                return
-              }
-
-              if (order.indexOf(avail) === -1) {
-                ws.send(JSON.stringify({error: 'No work available for supported settings'}))
-                ws.close()
-                return
-              }
-              ws.send(JSON.stringify({responseType: 'file', response: [this.options.files[avail], avail]}))
+            try {
+              avail = message.response.reduce((pre, cur) => order.indexOf(cur) < order.indexOf(pre) ? cur : pre)
+            } catch (e) {
+              return
             }
-            break
-          case 'request_hash':
-            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength]}))
-            break
-          case 'submit_hash':
-            if (hashcash.check(gen, this.options.security.hashStrength, message.response)) {
-              gen = idgen()
-              ind = randomIndGenerator()
-              if (ind === -1) {
-                ws.send(JSON.stringify({error: 'No work available'}))
-              } else {
-                this.session[ind].workers++
-                ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
-                if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
-                  this.remaining.splice(bs(this.remaining, ind), 1)
-                }
-              }
+
+            if (order.indexOf(avail) === -1) {
+              ws.send(JSON.stringify({error: 'No work available for supported settings'}))
+              ws.close()
+              return
+            }
+            ws.send(JSON.stringify({responseType: 'file', response: [this.options.files[avail], avail]}))
+          }
+        } else if (message.responseType === 'request_work') {
+          workGetter()
+        } else if (message.responseType === 'submit_work') {
+          if (message.response === undefined) {
+              return
+            }
+
+          const index = ind
+
+          ind = -1
+          new Promise((resolve, reject) => {
+            if (this.listenerCount('work_submitted') === 0) {
+              resolve()
             } else {
-              // if the hash is wrong and strict mode is on.
-              return
+              this.emit('work_submitted', this.session[index].work, message.response, ws, resolve, reject)
             }
-
-            break
-
-          case 'submit_work':
-            if (message.response === undefined) {
-              return
-            }
-
-            const index = ind
-
-            ind = -1
-            gen = idgen()
+          })
+          .then(() => {
             this.session[index].solutions.push(message.response)
 
             this.session[index].solutionCount++
 
             this.session[index].workers--
-            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength]}))
+            workGetter()
             if (this.session[index].solutionCount === this.options.security.verificationStrength) {
               this.pending++
               new Promise((resolve, reject) => {
-                this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions, resolve, reject)
+                if (this.listenerCount('workgroup_complete') === 0) {
+                  resolve()
+                } else {
+                  this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions, resolve, reject)
+                }
               })
                 .then(answer => {
                   this.pending--
@@ -188,7 +189,11 @@ class DistriServer extends EventEmitter {
                   }
                 })
             }
-
+          })
+          .catch(() => {
+            // just ignore it, whatever
+            this.workers--
+          })
         }
       })
 
@@ -252,7 +257,7 @@ class DistriClient {
     const fs = require('fs')
     this.options = defaults(opts, {
       host: 'ws://localhost:8081',
-      availableMethods: ['gcc', 'javascript']
+      availableMethods: ['node']
     })
 
     this.client = new WebSocket(this.options.host)
@@ -285,20 +290,12 @@ class DistriClient {
             runner = spawn(message.response[1], [`./distri-file`], {stdio: ['pipe', 'pipe', 'pipe']})
             runner.stdout.on('data', (data) => {
               if (data.toString() === 'ready') {
-                this.client.send(JSON.stringify({response: true, responseType: 'request_hash'}))
+                this.client.send(JSON.stringify({response: true, responseType: 'request_work'}))
               } else {
                 submit(JSON.parse(data).data)
               }
             })
           })
-          break
-        case 'submit_hash':
-          login = message.login || ''
-          this.client.send(JSON.stringify({
-            responseType: 'submit_hash',
-            response: hashcash(message.response[0], message.response[1]),
-            login: login
-          }))
           break
         case 'submit_work':
           runner.stdin.write(JSON.stringify({data: message.work}))

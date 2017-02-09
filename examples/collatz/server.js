@@ -13,10 +13,7 @@ const Server = new distri.DistriServer({
 
   security: {
     verificationStrength: 1,
-    timeout: 5
   },
-
-  work: arr,
 
   files: {
     'javascript': 'cdn.rawgit.com/Flarp/d75e5676179442516ef9458e5ecc32cb/raw/5d523ebd760d3cf3d1f38ea34751bb55c660bfcc/javascript-collatz.js',
@@ -24,6 +21,8 @@ const Server = new distri.DistriServer({
   }
 
 })
+
+Server.addWork(arr)
 
 Server.on('workgroup_complete', (i, o, res, rej) => {
   console.log(i, o[0])
