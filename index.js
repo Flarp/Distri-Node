@@ -16,15 +16,11 @@ class DistriServer extends EventEmitter {
         port: 8080
       },
 
-      security: {
-        verificationStrength: 1,
-        hashStrength: 3,
-        minUsers: 1,
-      },
+      verificationStrength: 1,
 
       files: {
 
-      },
+      }
 
     })
 
@@ -61,10 +57,7 @@ class DistriServer extends EventEmitter {
       }
     }
 
-    let maxTime = 0
-
     this.server.on('connection', (ws) => {
-
       // Generate a starting index in the session array. Starting at -1
       // will let the server know if someone unverified is trying to
       // request work
@@ -74,9 +67,6 @@ class DistriServer extends EventEmitter {
       this.userCount++
 
       ws.on('message', (m) => {
-        if (this.userCount < this.options.security.minUsers) {
-          return
-        }
         let message
 
         try {
@@ -84,7 +74,6 @@ class DistriServer extends EventEmitter {
         } catch (e) {
           return
         }
-        
         const workGetter = () => {
           ind = randomIndGenerator()
           if (ind === -1) {
@@ -92,7 +81,7 @@ class DistriServer extends EventEmitter {
           } else {
             this.session[ind].workers++
             ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
-            if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
+            if (this.session[ind].workers + this.session[ind].solutionCount === this.options.verificationStrength && bs(this.remaining, ind) !== -1) {
               this.remaining.splice(bs(this.remaining, ind), 1)
             }
           }
@@ -103,7 +92,6 @@ class DistriServer extends EventEmitter {
           // kick the user if the server is using strict mode
           return
         }
-        
         if (message.responseType === 'request') {
           if (sentFile === false) {
             let avail
@@ -125,8 +113,8 @@ class DistriServer extends EventEmitter {
           workGetter()
         } else if (message.responseType === 'submit_work') {
           if (message.response === undefined) {
-              return
-            }
+            return
+          }
 
           const index = ind
 
@@ -145,7 +133,7 @@ class DistriServer extends EventEmitter {
 
             this.session[index].workers--
             workGetter()
-            if (this.session[index].solutionCount === this.options.security.verificationStrength) {
+            if (this.session[index].solutionCount === this.options.verificationStrength) {
               this.pending++
               new Promise((resolve, reject) => {
                 if (this.listenerCount('workgroup_complete') === 0) {
@@ -224,7 +212,7 @@ class DistriServer extends EventEmitter {
         if (val > greatest.hits) greatest = {solution: key, hits: val}
       }
 
-      if ((greatest.hits / this.options.security.verificationStrength) >= (percentage / 100)) {
+      if ((greatest.hits / this.options.verificationStrength) >= (percentage / 100)) {
         resolve(greatest.solution)
       } else {
         reject()
