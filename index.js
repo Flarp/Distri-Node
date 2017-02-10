@@ -73,17 +73,6 @@ class DistriServer extends EventEmitter {
       // generate something random for later on
       this.userCount++
 
-      // if the minimum user count has not been met
-      if (this.userCount < this.options.security.minUsers) {
-        // queue the user
-        this.userQueue.push(ws)
-      } else {
-        // tell each user in the queue that they can now request
-        this.userQueue.map(user => user.send(JSON.stringify({responseType: 'request'})))
-        this.userQueue = []
-        ws.send(JSON.stringify({responseType: 'request'}))
-      }
-
       ws.on('message', (m) => {
         if (this.userCount < this.options.security.minUsers) {
           return
@@ -219,6 +208,7 @@ class DistriServer extends EventEmitter {
         return -1
       }
     })
+    console.log(this.session)
     if (emitReady) this.server.clients.map(client => client.send(JSON.stringify({responseType: 'request'})))
   }
 
