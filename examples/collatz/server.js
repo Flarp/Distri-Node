@@ -12,7 +12,7 @@ const Server = new distri.DistriServer({
   },
 
   security: {
-    verificationStrength: 1,
+    verificationStrength: 1
   },
 
   files: {
@@ -23,12 +23,6 @@ const Server = new distri.DistriServer({
 })
 
 Server.addWork(arr)
-
-Server.server.on('connection', ws => {
-  ws.on('message', m => {
-    console.log(m)
-  })
-})
 
 Server.on('workgroup_complete', (i, o, res, rej) => {
   console.log(i, o[0])
@@ -42,4 +36,4 @@ Server.on('all_work_complete', () => {
   })
 })
 
-console.log(process.env.PORT)
+
