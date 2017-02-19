@@ -17,7 +17,7 @@ const Server = new distri.DistriServer({
 
   files: {
     'javascript': 'gist.githubusercontent.com/Flarp/d75e5676179442516ef9458e5ecc32cb/raw/87241d2d5c84006d95f89aaee230644ac3e11899/javascript-collatz.js',
-    'node': 'https://gist.githubusercontent.com/Flarp/e08a9dc96dfe19264052c14773f6d0d4/raw/2f629e8409c4022e67b215778c1a98b575b6079d/node-collatz.js'
+    'node': 'https://gist.githubusercontent.com/Flarp/e08a9dc96dfe19264052c14773f6d0d4/raw/3bcf1b75b67a37f9d401784f073c255df251e64b/node-collatz.js'
   }
 
 })
@@ -35,5 +35,3 @@ Server.on('all_work_complete', () => {
 
   })
 })
-
-

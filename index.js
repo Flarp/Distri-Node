@@ -369,13 +369,13 @@ class DistriClient {
               if (data.toString() === 'ready') {
                 this.client.send(JSON.stringify({response: true, responseType: 'request_work'}))
               } else {
-                submit(JSON.parse(data).data)
+                submit(JSON.parse(data).result)
               }
             })
           })
           break
         case 'submit_work':
-          runner.stdin.write(JSON.stringify({data: message.work}))
+          runner.stdin.write(JSON.stringify({data: { work: message.work }}))
           break
       }
     })
