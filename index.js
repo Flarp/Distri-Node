@@ -1,8 +1,6 @@
 const WebSocket = require('ws')
 const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
-const idgen = require('idgen')
-const hashcash = require('hashcashgen')
 const bs = require('binarysearch')
 
 class DistriServer extends EventEmitter {
@@ -10,7 +8,7 @@ class DistriServer extends EventEmitter {
     super()
     if (opts.constructor.name !== 'Object') throw new TypeError('Options must be given in the form of an object')
 
-    const priorities = ['webassembly', 'node', 'javascript']
+    const priorities = ['node', 'javascript']
 
     // explained in the README
     this.options = defaults(opts, {
@@ -18,19 +16,12 @@ class DistriServer extends EventEmitter {
         port: 8080
       },
 
-      security: {
-        verificationStrength: 1,
-        hashStrength: 3,
-        minUsers: 1,
-        strict: false,
-        timeout: 0
-      },
+      verificationStrength: 1,
 
       files: {
 
-      },
+      }
 
-      work: [1]
     })
 
     const order = priorities.filter(priority => this.options.files[priority])
@@ -47,18 +38,10 @@ class DistriServer extends EventEmitter {
     // A queue of websocket client objects if the
     // user count is not met.
     this.userQueue = []
-
+    this.session = []
         // where the work is stored, along with all its metadata
-    this.session = this.options.work.map(work => {
-      return {workers: 0, work: work, solutions: [], solutionCount: 0}
-    })
 
     this.remaining = []
-    for (let i = 0; i < this.options.work.length; i++) {
-      this.remaining.push(i)
-    }
-
-    this.options.work = undefined
 
     const randomIndGenerator = () => {
       let index
@@ -74,146 +57,94 @@ class DistriServer extends EventEmitter {
       }
     }
 
-    let maxTime = 0
-
     this.server.on('connection', (ws) => {
-      // time the user started computing the problem
-      let start
-
-      // time the user returned the result
-      let end
-
-      // initialize the setTimeout for kicking the user
-      let timeout
-
       // Generate a starting index in the session array. Starting at -1
       // will let the server know if someone unverified is trying to
       // request work
       let sentFile = false
       let ind = -1
       // generate something random for later on
-      let gen = idgen()
       this.userCount++
 
-      // if the minimum user count has not been met
-      if (this.userCount < this.options.security.minUsers) {
-                // queue the user
-        this.userQueue.push(ws)
-      } else {
-        // tell each user in the queue that they can now request
-        this.userQueue.map(user => user.send(JSON.stringify({responseType: 'request'})))
-        this.userQueue = []
-        ws.send(JSON.stringify({responseType: 'request'}))
-      }
-
       ws.on('message', (m) => {
-        if (this.userCount < this.options.security.minUsers) {
-          if (this.options.security.strict) {
-            ws.close()
-          }
-          return
-        }
         let message
 
         try {
           message = JSON.parse(m)
         } catch (e) {
-          if (this.options.security.strict) ws.close()
           return
+        }
+        const workGetter = () => {
+          ind = randomIndGenerator()
+          if (ind === -1) {
+            ws.send(JSON.stringify({error: 'No work available'}))
+          } else {
+            this.session[ind].workers++
+            ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
+            if (this.session[ind].workers + this.session[ind].solutionCount === this.options.verificationStrength && bs(this.remaining, ind) !== -1) {
+              this.remaining.splice(bs(this.remaining, ind), 1)
+            }
+          }
         }
 
         // if anything is wrong with the message
-        if ((message.constructor !== Object) || !message.response || !message.responseType) {
+        if ((message.constructor !== Object) || message.response === undefined || !message.responseType) {
           // kick the user if the server is using strict mode
-          if (this.options.security.strict) ws.close()
           return
         }
-        switch (message.responseType) {
-          case 'request':
-            if (sentFile === false) {
-              let avail
+        if (message.responseType === 'request') {
+          if (sentFile === false) {
+            let avail
 
-              try {
-                avail = message.response.reduce((pre, cur) => order.indexOf(cur) < order.indexOf(pre) ? cur : pre)
-              } catch (e) {
-                if (this.options.security.strict) ws.close()
-                return
-              }
-
-              if (order.indexOf(avail) === -1) {
-                ws.send(JSON.stringify({error: 'No work available for supported settings'}))
-                ws.close()
-                return
-              }
-              ws.send(JSON.stringify({responseType: 'file', response: [this.options.files[avail], avail]}))
+            try {
+              avail = message.response.reduce((pre, cur) => order.indexOf(cur) < order.indexOf(pre) ? cur : pre)
+            } catch (e) {
+              return
             }
-            break
-          case 'request_hash':
-            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength]}))
-            break
-          case 'submit_hash':
-            if (hashcash.check(gen, this.options.security.hashStrength, message.response)) {
-              gen = idgen()
-              ind = randomIndGenerator()
-              if (ind === -1) {
-                ws.send(JSON.stringify({error: 'No work available'}))
-              } else {
-                this.session[ind].workers++
-                if (this.options.security.timeout) {
-                  timeout = setTimeout(() => {
-                    ws.close()
-                  }, this.options.security.timeout * 1000)
-                }
-                start = Date.now()
-                ws.send(JSON.stringify({responseType: 'submit_work', workType: [this.options.mode.output.type, this.options.mode.output.endianess, this.options.mode.output.byteLength], work: this.session[ind].work}))
-                if (this.session[ind].workers + this.session[ind].solutionCount === this.options.security.verificationStrength && bs(this.remaining, ind) !== -1) {
-                  this.remaining.splice(bs(this.remaining, ind), 1)
-                }
-              }
+
+            if (order.indexOf(avail) === -1) {
+              ws.send(JSON.stringify({error: 'No work available for supported settings'}))
+              ws.close()
+              return
+            }
+            ws.send(JSON.stringify({responseType: 'file', response: [this.options.files[avail], avail]}))
+          }
+        } else if (message.responseType === 'request_work') {
+          workGetter()
+        } else if (message.responseType === 'submit_work') {
+          if (message.response === undefined) {
+            return
+          }
+
+          const index = ind
+
+          ind = -1
+          new Promise((resolve, reject) => {
+            if (this.listenerCount('work_submitted') === 0) {
+              resolve()
             } else {
-              // if the hash is wrong and strict mode is on.
-              if (this.options.security.strict) ws.close()
-              return
+              this.emit('work_submitted', this.session[index].work, message.response, ws, resolve, reject)
             }
-
-            break
-
-          case 'submit_work':
-            if (!message.response) {
-              if (this.options.security.strict) ws.close()
-              return
-            }
-
-            if (this.options.security.timeout) {
-              clearTimeout(timeout)
-            }
-
-            end = Date.now()
-
-            if (maxTime < end - start) maxTime = end - start
-
-            const index = ind
-
-            ind = -1
-            gen = idgen()
+          })
+          .then(() => {
             this.session[index].solutions.push(message.response)
 
             this.session[index].solutionCount++
 
             this.session[index].workers--
-
-            ws.send(JSON.stringify({responseType: 'submit_hash', response: [gen, this.options.security.hashStrength]}))
-            if (this.session[index].solutionCount === this.options.security.verificationStrength) {
+            workGetter()
+            if (this.session[index].solutionCount === this.options.verificationStrength) {
               this.pending++
               new Promise((resolve, reject) => {
-                this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions, resolve, reject)
+                if (this.listenerCount('workgroup_complete') === 0) {
+                  resolve()
+                } else {
+                  this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions, resolve, reject)
+                }
               })
-                .then((answer) => {
+                .then(answer => {
                   this.pending--
                   this.emit('workgroup_accepted', this.session[index].work, answer)
-                  if (this.options.security.dynamicTimeouts) {
-                    this.options.security.timeout = maxTime / 1000
-                  }
                   if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining, index), 1)
                   this.solutions++
                   if (this.solutions === this.session.length) {
@@ -233,7 +164,11 @@ class DistriServer extends EventEmitter {
                   }
                 })
             }
-
+          })
+          .catch(() => {
+            // just ignore it, whatever
+            this.workers--
+          })
         }
       })
 
@@ -261,6 +196,7 @@ class DistriServer extends EventEmitter {
         return -1
       }
     })
+    console.log(this.session)
     if (emitReady) this.server.clients.map(client => client.send(JSON.stringify({responseType: 'request'})))
   }
 
@@ -276,7 +212,7 @@ class DistriServer extends EventEmitter {
         if (val > greatest.hits) greatest = {solution: key, hits: val}
       }
 
-      if ((greatest.hits / this.options.security.verificationStrength) >= (percentage / 100)) {
+      if ((greatest.hits / this.options.verificationStrength) >= (percentage / 100)) {
         resolve(greatest.solution)
       } else {
         reject()
@@ -297,7 +233,7 @@ class DistriClient {
     const fs = require('fs')
     this.options = defaults(opts, {
       host: 'ws://localhost:8081',
-      availableMethods: ['gcc', 'javascript']
+      availableMethods: ['node']
     })
 
     this.client = new WebSocket(this.options.host)
@@ -330,20 +266,12 @@ class DistriClient {
             runner = spawn(message.response[1], [`./distri-file`], {stdio: ['pipe', 'pipe', 'pipe']})
             runner.stdout.on('data', (data) => {
               if (data.toString() === 'ready') {
-                this.client.send(JSON.stringify({response: true, responseType: 'request_hash'}))
+                this.client.send(JSON.stringify({response: true, responseType: 'request_work'}))
               } else {
                 submit(JSON.parse(data).data)
               }
             })
           })
-          break
-        case 'submit_hash':
-          login = message.login || ''
-          this.client.send(JSON.stringify({
-            responseType: 'submit_hash',
-            response: hashcash(message.response[0], message.response[1]),
-            login: login
-          }))
           break
         case 'submit_work':
           runner.stdin.write(JSON.stringify({data: message.work}))
