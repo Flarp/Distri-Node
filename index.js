@@ -1,9 +1,68 @@
+/**
+  @module Distri-Node
+*/
+
 const WebSocket = require('ws')
 const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
 const bs = require('binarysearch')
 
+/**
+    * Constructor for DistriServer.
+    * @constructor
+    * @throws {TypeError} Options sent to the constructor are not in a single object.
+    * @extends EventEmitter
+    *
+    * @param {Object} opts - The object passed to the constructor.
+    * @param {Object} opts.connection - Options for a ws.Server constructor. (websockets/ws)
+    * @param {number} opts.verificationStrength - How many solutions must be submitted for a problem to be considered complete. Security measure to help keep clients from spamming incorrect answers.
+    * @param {Object} opts.files - URL's to files for Distri clients to fetch.
+    * @param {string} opts.files.node - File to fetch for Node.js clients, not prepended with 'http(s)://'.
+    * @param {string} opts.files.javascript - File to fetch for JavaScript clients, not prepended with 'http(s)://'.
+    *
+    * @emits DistriServer#event:work_submitted
+    * @emits DistriServer#event:workgroup_complete
+    * @emits DistriServer#event:workgroup_accepted
+    * @emits DistriServer#event:workgroup_rejected
+    * @emits DistriServer#event:all_work_complete
+    *
+*/
+
 class DistriServer extends EventEmitter {
+  /**
+    * Fires when a single user submits work. Useful for authentication the user. Do not use for verifying work, use workgroup_complete instead. If a listener is attached to this event, a resolve() and reject() function will be emitted, and one of them must be called in order for Distri to know what to do with the work.
+    * @event module:Distri-Node~DistriServer#work_submitted
+    * @param {Any} work - Work the client was sent.
+    * @param {Any} solution - Solution the client sent back.
+    * @param {WebSocket} - WebSocket session of the user.
+    * @param {Function} resolve - Function from a Promise. When called, the client's work is accepted and put into the solution pool.
+    * @param {Function} reject - Function from a Promise. When called, the client's work is rejected.
+    * @see DistriServer#workgroup_complete
+  */
+  /**
+    * Fires when a piece of work has the required amount of solutions, set by the verification strength. If no listener is attached to this event, the first solution is automatically accepted.
+      @event module:Distri-Node~DistriServer#workgroup_complete
+      @param {Any} work - The work sent to all of the clients.
+      @param {Array} solutions - An array of the solutions each client sent back. Note that this will still be an array even if the verification strength is only one.
+      @param {Function} resolve - A function that accepts the solution given to it. Be sure to give it just one solution, and not the entire array.
+      @param {Function} reject - A function that takes no parameters and rejects the entire workgroup, starting it over.
+  */
+  /**
+    * Fires when a piece of work has a solution accepted for it.
+    * @event module:Distri-Node~DistriServer#workgroup_accepted
+    * @param {Any} work - The work sent to the clients.
+    * @param {Any} solution - The accepted solution.
+  */
+  /**
+    * Fires when a workgroup is rejected.
+    * @event module:Distri-Node~DistriServer#workgroup_rejected
+    * @param {Any} work - The work the clients were sent.
+    * @param {Array} solutions - The solutions that were sent in for the problem.
+  */
+  /**
+    * Fires when all work is complete. No parameters are given.
+    * @event module:Distri-Node~DistriServer#all_work_complete
+  */
   constructor (opts) {
     super()
     if (opts.constructor.name !== 'Object') throw new TypeError('Options must be given in the form of an object')
@@ -26,22 +85,48 @@ class DistriServer extends EventEmitter {
 
     const order = priorities.filter(priority => this.options.files[priority])
 
+    /**
+      * The WebSocket server for all of Distri's work
+      * @member {Object}
+    */
     this.server = new WebSocket.Server(this.options.connection)
 
-    // the number of the solved problems
+    /**
+      * The number of solutions that have been submitted for a single session. Resets when all work is finished.
+      * @member {number}
+    */
     this.solutions = 0
 
-    // the number of currently pending problems
-    // how many connected users there are
+    /**
+      * The number of currently connected clients.
+      * @member {number}
+    */
     this.userCount = 0
 
-    // A queue of websocket client objects if the
-    // user count is not met.
-    this.userQueue = []
-    this.session = []
-        // where the work is stored, along with all its metadata
+    /**
+      * @typedef {Object} DistriProblem
+      * @property {Any} work - The work for that problem.
+      * @property {number} workers - The number of clients currently working on the problem.
+      * @property {Array} solutions - The submitted solutions for the problem.
+    */
 
+    /**
+      * An array of objects that contains all work, solutions, and other metadata.
+      * @member {Array.<DistriProblem>}
+    */
+    this.session = []
+
+    /**
+      * An array of indexes that have not been solved yet.
+      * @member {Array}
+    */
     this.remaining = []
+
+    /**
+      * How many problems are undergoing verification.
+      * @member {number}
+    */
+    this.pending = 0
 
     const randomIndGenerator = () => {
       let index
@@ -81,7 +166,7 @@ class DistriServer extends EventEmitter {
           } else {
             this.session[ind].workers++
             ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
-            if (this.session[ind].workers + this.session[ind].solutionCount === this.options.verificationStrength && bs(this.remaining, ind) !== -1) {
+            if (this.session[ind].workers + this.session[ind].solutions.length === this.options.verificationStrength && bs(this.remaining, ind) !== -1) {
               this.remaining.splice(bs(this.remaining, ind), 1)
             }
           }
@@ -119,6 +204,10 @@ class DistriServer extends EventEmitter {
           const index = ind
 
           ind = -1
+          /*
+            * Inform the user a client has submitted work. If there are no listeners for checking individual
+            * submissions, automatically accept it.
+           */
           new Promise((resolve, reject) => {
             if (this.listenerCount('work_submitted') === 0) {
               resolve()
@@ -127,13 +216,12 @@ class DistriServer extends EventEmitter {
             }
           })
           .then(() => {
+            /* Add the work to the solutions array for that DistriProblem, and decrement the worker count. */
             this.session[index].solutions.push(message.response)
-
-            this.session[index].solutionCount++
 
             this.session[index].workers--
             workGetter()
-            if (this.session[index].solutionCount === this.options.verificationStrength) {
+            if (this.session[index].solutions.length === this.options.verificationStrength) {
               this.pending++
               new Promise((resolve, reject) => {
                 if (this.listenerCount('workgroup_complete') === 0) {
@@ -158,7 +246,6 @@ class DistriServer extends EventEmitter {
                   this.emit('workgroup_rejected', this.session[index].work, this.session[index].solutions)
                   this.session[index].solutions = []
                   this.session[index].workers = 0
-                  this.session[index].solutionCount = 0
                   if (bs(this.remaining, index) === -1) {
                     bs.insert(this.remaining, index)
                   }
@@ -181,13 +268,19 @@ class DistriServer extends EventEmitter {
     })
   }
 
+  /**
+    * A function that adds work to the work queue.
+    * @param {Array} work - Work to be added to the work queue.
+    * @throws {TypeError} Work supplied is not an array.
+
+  */
   addWork (work) {
     let emitReady = false
     if (this.session.length === 0) emitReady = true
     if (work.constructor.name !== 'Array') throw new TypeError('Added work must be in the form of an array')
 
     work.map(work => {
-      this.remaining.push(this.session.push({work, solutions: [], workers: 0, solutionCount: 0}) - 1)
+      this.remaining.push(this.session.push({work, solutions: [], workers: 0}) - 1)
     })
     this.remaining.sort((a, b) => {
       if (a > b) {
@@ -196,10 +289,17 @@ class DistriServer extends EventEmitter {
         return -1
       }
     })
-    console.log(this.session)
     if (emitReady) this.server.clients.map(client => client.send(JSON.stringify({responseType: 'request'})))
   }
 
+  /**
+    A built-in verification function for Distri that checks to see if a set of solutions contains one solution that occurs more than a certain percentage of the time.
+    @param {Array} solutions - The solutions that are being checked.
+    @param {number} percentage - The percent of time a certain solution must occur equal to or more than.
+    @param {Function} resolve - A callback function that will be called with the accepted answer. Good to use with the resolve() function in workgroup_complete.
+    @param {Function} reject - A callback function that will be called if none of the solutions satisfy the percentage. Good to use with the reject() function in workgroup_complete.
+    @see DistriServer#workgroup_complete
+  */
   CheckPercentage (solutions, percentage, resolve, reject) {
     const init = solutions[0]
     if (solutions.every(solution => solution === init)) {
@@ -221,27 +321,30 @@ class DistriServer extends EventEmitter {
   }
 }
 
-module.exports.DistriServer = DistriServer
-
+/**
+  * A Node.js client for Distri.
+  * @constructor
+  * @throws {TypeError} Host is not a string.
+  * @param {string} host - WebSocket link for the Distri server.
+*/
 class DistriClient {
-  constructor (opts) {
+  constructor (host) {
     const onDeath = require('death')
 
-    if (opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
+    if (typeof host !== 'string') throw new TypeError('Host link must be a string')
     const spawn = require('child_process').spawn
     const request = require('request')
     const fs = require('fs')
-    this.options = defaults(opts, {
-      host: 'ws://localhost:8081',
-      availableMethods: ['node']
-    })
 
-    this.client = new WebSocket(this.options.host)
+    /**
+      * The WebSocket session for the client.
+      * @member {WebSocket}
+    */
+    this.client = new WebSocket(host)
     const submit = (work) => {
       this.client.send(JSON.stringify({
         responseType: 'submit_work',
-        response: work,
-        login
+        response: work
       }))
     }
 
@@ -252,8 +355,6 @@ class DistriClient {
       if (runner) runner.kill('SIGINT')
       fs.unlinkSync(`./distri-file`)
     })
-
-    let login
 
     this.client.on('open', () => {
       this.client.send(JSON.stringify({responseType: 'request', response: ['node']}))
@@ -281,4 +382,7 @@ class DistriClient {
   }
 }
 
-module.exports.DistriClient = DistriClient
+module.exports = {
+  DistriServer,
+  DistriClient
+}

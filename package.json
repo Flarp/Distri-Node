@@ -1,5 +1,5 @@
 {
-  "name": "distri-node",
+  "name": "Distri-Node",
   "version": "1.0.0",
   "description": "A distributed computing module for Node.js",
   "main": "index.js",
