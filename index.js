@@ -48,18 +48,6 @@ class DistriServer extends EventEmitter {
       @param {Function} reject - A function that takes no parameters and rejects the entire workgroup, starting it over.
   */
   /**
-    * Fires when a piece of work has a solution accepted for it.
-    * @event module:Distri-Node~DistriServer#workgroup_accepted
-    * @param {Any} work - The work sent to the clients.
-    * @param {Any} solution - The accepted solution.
-  */
-  /**
-    * Fires when a workgroup is rejected.
-    * @event module:Distri-Node~DistriServer#workgroup_rejected
-    * @param {Any} work - The work the clients were sent.
-    * @param {Array} solutions - The solutions that were sent in for the problem.
-  */
-  /**
     * Fires when all work is complete. No parameters are given.
     * @event module:Distri-Node~DistriServer#all_work_complete
   */
@@ -232,7 +220,6 @@ class DistriServer extends EventEmitter {
               })
                 .then(answer => {
                   this.pending--
-                  this.emit('workgroup_accepted', this.session[index].work, answer)
                   if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining, index), 1)
                   this.solutions++
                   if (this.solutions === this.session.length) {
@@ -243,7 +230,6 @@ class DistriServer extends EventEmitter {
                 })
                 .catch(() => {
                   this.pending--
-                  this.emit('workgroup_rejected', this.session[index].work, this.session[index].solutions)
                   this.session[index].solutions = []
                   this.session[index].workers = 0
                   if (bs(this.remaining, index) === -1) {
