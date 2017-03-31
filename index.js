@@ -154,12 +154,8 @@ class DistriServer extends EventEmitter {
             ws.send(JSON.stringify({responseType: 'file', response: this.options.file}))
           }
         } else if (message.responseType === 'request_work') {
-          console.log('hi mom')
           workGetter(ws)
         } else if (message.responseType === 'submit_work') {
-          if (message.response === undefined) {
-            return
-          }
 
           const index = ind
 
