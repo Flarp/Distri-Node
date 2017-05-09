@@ -7,7 +7,9 @@
     "test": "./node_modules/.bin/serial-mocha test/test.js"
   },
   "keywords": [
-    "distributed"
+    "distributed",
+    "volunteer computing",
+    "distributed computing"
   ],
   "author": "Flarp",
   "license": "GPL-3.0",
