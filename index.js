@@ -26,7 +26,7 @@ class DistriServer extends EventEmitter {
 
     /*
       An array of available indexes in session, where the worker count plus
-      the solution count is less then the number defined by verificationStrength
+      the solution count is less than the number defined by verificationStrength
       in the options.
     */
     this.available = []
