@@ -1,7 +1,7 @@
 const EventEmitter = require('events').EventEmitter
 const WebSocket = require('ws')
 const bs = require('binary-search')
-const msgpack = require('msgpack-lite')
+const msgpack = require('msgpack-js-browser')
 const comparator = (a, b) => a - b
 
 class DistriServer extends EventEmitter {
@@ -43,9 +43,10 @@ class DistriServer extends EventEmitter {
     return Math.floor(Math.random() * this.available.length)
   }
 
-  serveUser (ws) {
+  serveUser (ws, file) {
     ws.ind = this.getIndex()
     const ind = ws.ind
+    console.log(ind)
     /*
       There is no work, so wait until addWork is called and this function
       will be called again.
@@ -55,7 +56,8 @@ class DistriServer extends EventEmitter {
 
     // There is work, so give it to the user.
     this.session[ind].workers++
-    ws.send(msgpack.encode({ type: 1, work: this.session[ind].work }))
+    console.log(msgpack.encode({ file: file, work: this.session[ind].work }))
+    ws.send(msgpack.encode({ file: file, work: this.session[ind].work }), { binary: true })
 
     // If the problem has reached the verificationStrength limit, remove it from the available array.
     if (this.session[ind].workers + this.session[ind].solutions.length === this.options.verificationStrength) {
@@ -65,9 +67,8 @@ class DistriServer extends EventEmitter {
 
   addWork (work = []) {
     if (!Array.isArray(work)) throw new TypeError('Work supplied to addWork must be in the form of an array')
-    work.map(item => this.session.push({ workers: 0, solutions: [], work: item }))
+    work.map(item => this.available.push(this.session.push({ workers: 0, solutions: [], work: item })))
 
-    this.server.clients
   }
 
   handleFailure (ind) {
@@ -83,7 +84,7 @@ class DistriServer extends EventEmitter {
     let work
     const ind = ws.ind
     ws.ind = -1
-    this.serveUser(ws)
+    this.serveUser(ws, 0)
     try {
       work = msgpack.decode(encodedWork).work
     } catch (e) {
@@ -115,14 +116,13 @@ class DistriServer extends EventEmitter {
 
   start () {
     // Start the server.
-    return new Promise((resolve, reject) => {
-      this.server = new WebSocket.Server(this.options.connection, resolve)
+      this.server = new WebSocket.Server(this.options.connection)
 
       this.server.on('connection', ws => {
-        // Right when a user connects, send them the file.
-        ws.send(msgpack.encode({ type: 0, file: this.options.file }))
+	ws.ind = -1
 
-        ws.ind = -1
+	this.serveUser(ws, this.options.file)
+        // Right when a user connects, send them the file.
 
         ws.on('message', m => this.handleSubmission(m, ws))
 
@@ -130,7 +130,6 @@ class DistriServer extends EventEmitter {
           if (ws.ind !== -1) this.handleFailure(ws.ind)
         })
       })
-    })
   }
 
 }
