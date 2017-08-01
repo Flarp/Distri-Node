@@ -1,284 +1,138 @@
-const WebSocket = require('ws')
-const defaults = require('deep-defaults')
 const EventEmitter = require('events').EventEmitter
-const bs = require('binarysearch')
+const WebSocket = require('ws')
+const bs = require('binary-search')
+const msgpack = require('msgpack-lite')
+const comparator = (a, b) => a - b
 
 class DistriServer extends EventEmitter {
-  constructor (opts) {
+  constructor (opts = {}) {
     super()
-    if (opts.constructor.name !== 'Object') throw new TypeError('Options must be given in the form of an object')
 
-    const priorities = ['node', 'javascript']
+    this.options = {}
+    Object.assign(this.options, {
 
-    // explained in the README
-    this.options = defaults(opts, {
-      connection: {
-        port: 8080
-      },
+      // Options passed to the constructor for the WebSocket Server.
+      connection: { port: 8080 },
 
+      // The amount of solutions required before a problem is considered complete.
       verificationStrength: 1,
 
-      files: {
+      // The contents of the worker file sent to the user.
+      file: ''
+    }, opts)
 
-      }
-
-    })
-
-    const order = priorities.filter(priority => this.options.files[priority])
-
-    this.server = new WebSocket.Server(this.options.connection)
-
-    // the number of the solved problems
-    this.solutions = 0
-
-    // the number of currently pending problems
-    // how many connected users there are
-    this.userCount = 0
-
-    // A queue of websocket client objects if the
-    // user count is not met.
-    this.userQueue = []
+    // Where all the work goes, along with the solutions.
     this.session = []
-        // where the work is stored, along with all its metadata
 
-    this.remaining = []
+    /*
+      An array of available indexes in session, where the worker count plus
+      the solution count is less then the number defined by verificationStrength
+      in the options.
+    */
+    this.available = []
 
-    const randomIndGenerator = () => {
-      let index
+    // The number of problems solved.
+    this.solved = 0
+  }
 
-      if (this.session.length === 0 || this.pending + this.solutions > this.session.length) return -1
-      // get a random index from the session array.
-      index = this.remaining[(Math.random() * this.remaining.length) | 0]
-      // if everything is full
-      if (this.remaining.length === 0) {
-        return -1
-      } else {
-        return index
-      }
+  getIndex () {
+    // If nothing is available, return -1.
+    if (this.available.length === 0) return -1
+
+    // If work is available, randomly choose a piece of work.
+    return Math.floor(Math.random() * this.available.length)
+  }
+
+  serveUser (ws) {
+    ws.ind = this.getIndex()
+    const ind = ws.ind
+    /*
+      There is no work, so wait until addWork is called and this function
+      will be called again.
+      Setting the ind to -1 will tell addWork that the user is awaiting work.
+    */
+    if (ind === -1) return
+
+    // There is work, so give it to the user.
+    this.session[ind].workers++
+    ws.send(msgpack.encode({ type: 1, work: this.session[ind].work }))
+
+    // If the problem has reached the verificationStrength limit, remove it from the available array.
+    if (this.session[ind].workers + this.session[ind].solutions.length === this.options.verificationStrength) {
+      this.available.splice(bs(this.available, ind, comparator), 1)
     }
+  }
 
-    this.server.on('connection', (ws) => {
-      // Generate a starting index in the session array. Starting at -1
-      // will let the server know if someone unverified is trying to
-      // request work
-      let sentFile = false
-      let ind = -1
-      // generate something random for later on
-      this.userCount++
+  addWork (work = []) {
+    if (!Array.isArray(work)) throw new TypeError('Work supplied to addWork must be in the form of an array')
+    work.map(item => this.session.push({ workers: 0, solutions: [], work: item }))
 
-      ws.on('message', (m) => {
-        let message
+    this.server.clients
+  }
 
-        try {
-          message = JSON.parse(m)
-        } catch (e) {
-          return
-        }
-        const workGetter = () => {
-          ind = randomIndGenerator()
-          if (ind === -1) {
-            ws.send(JSON.stringify({error: 'No work available'}))
-          } else {
-            this.session[ind].workers++
-            ws.send(JSON.stringify({responseType: 'submit_work', work: this.session[ind].work}))
-            if (this.session[ind].workers + this.session[ind].solutionCount === this.options.verificationStrength && bs(this.remaining, ind) !== -1) {
-              this.remaining.splice(bs(this.remaining, ind), 1)
-            }
-          }
-        }
+  handleFailure (ind) {
+    this.session[ind].workers--
+    const availableIndex = bs(this.available, ind, comparator)
+    if (availableIndex < 0) {
+      this.available.splice(Math.abs(availableIndex + 1), ind)
+    }
+    return true
+  }
 
-        // if anything is wrong with the message
-        if ((message.constructor !== Object) || message.response === undefined || !message.responseType) {
-          // kick the user if the server is using strict mode
-          return
-        }
-        if (message.responseType === 'request') {
-          if (sentFile === false) {
-            let avail
+  handleSubmission (encodedWork, ws) {
+    let work
+    const ind = ws.ind
+    ws.ind = -1
+    this.serveUser(ws)
+    try {
+      work = msgpack.decode(encodedWork).work
+    } catch (e) {
+      this.handleFailure(ind)
+      return
+    }
+    new Promise((resolve, reject) => {
+      if (this.listenerCount('work_complete') === 0) resolve()
+      this.emit('work_complete', this.session[ind].work, work, resolve, reject, ws)
+    })
+    .then(() => {
+      this.session[ind].solutions.push(work)
+      this.session[ind].workers--
 
-            try {
-              avail = message.response.reduce((pre, cur) => order.indexOf(cur) < order.indexOf(pre) ? cur : pre)
-            } catch (e) {
-              return
-            }
+      if (this.session[ind].solutions.length === this.options.verificationStrength) {
+        new Promise((resolve, reject) => {
+          this.emit('workgroup_complete', this.session[ind].work, this.session[ind].solutions, resolve, reject)
+        })
+        .then(() => {
+          if (++this.solved === this.session.length) this.emit('all_work_complete')
+        })
+        .catch(() => {
+          this.available.splice(bs(this.available, ind, comparator), ind, 0)
+        })
+      }
+    })
+    .catch(() => this.handleFailure(ind))
+  }
 
-            if (order.indexOf(avail) === -1) {
-              ws.send(JSON.stringify({error: 'No work available for supported settings'}))
-              ws.close()
-              return
-            }
-            ws.send(JSON.stringify({responseType: 'file', response: [this.options.files[avail], avail]}))
-          }
-        } else if (message.responseType === 'request_work') {
-          workGetter()
-        } else if (message.responseType === 'submit_work') {
-          if (message.response === undefined) {
-            return
-          }
+  start () {
+    // Start the server.
+    return new Promise((resolve, reject) => {
+      this.server = new WebSocket.Server(this.options.connection, resolve)
 
-          const index = ind
+      this.server.on('connection', ws => {
+        // Right when a user connects, send them the file.
+        ws.send(msgpack.encode({ type: 0, file: this.options.file }))
 
-          ind = -1
-          new Promise((resolve, reject) => {
-            if (this.listenerCount('work_submitted') === 0) {
-              resolve()
-            } else {
-              this.emit('work_submitted', this.session[index].work, message.response, ws, resolve, reject)
-            }
-          })
-          .then(() => {
-            this.session[index].solutions.push(message.response)
+        ws.ind = -1
 
-            this.session[index].solutionCount++
+        ws.on('message', m => this.handleSubmission(m, ws))
 
-            this.session[index].workers--
-            workGetter()
-            if (this.session[index].solutionCount === this.options.verificationStrength) {
-              this.pending++
-              new Promise((resolve, reject) => {
-                if (this.listenerCount('workgroup_complete') === 0) {
-                  resolve()
-                } else {
-                  this.emit('workgroup_complete', this.session[index].work, this.session[index].solutions, resolve, reject)
-                }
-              })
-                .then(answer => {
-                  this.pending--
-                  this.emit('workgroup_accepted', this.session[index].work, answer)
-                  if (bs(this.remaining, index) !== -1) this.remaining.splice(bs(this.remaining, index), 1)
-                  this.solutions++
-                  if (this.solutions === this.session.length) {
-                    this.session = []
-                    this.emit('all_work_complete')
-                    this.solutions = 0
-                  }
-                })
-                .catch(() => {
-                  this.pending--
-                  this.emit('workgroup_rejected', this.session[index].work, this.session[index].solutions)
-                  this.session[index].solutions = []
-                  this.session[index].workers = 0
-                  this.session[index].solutionCount = 0
-                  if (bs(this.remaining, index) === -1) {
-                    bs.insert(this.remaining, index)
-                  }
-                })
-            }
-          })
-          .catch(() => {
-            // just ignore it, whatever
-            this.workers--
-          })
-        }
-      })
-
-      ws.on('close', () => {
-        this.userCount--
-        if (ind !== -1) {
-          this.session[ind].workers--
-        }
+        ws.on('close', () => {
+          if (ws.ind !== -1) this.handleFailure(ws.ind)
+        })
       })
     })
   }
 
-  addWork (work) {
-    let emitReady = false
-    if (this.session.length === 0) emitReady = true
-    if (work.constructor.name !== 'Array') throw new TypeError('Added work must be in the form of an array')
-
-    work.map(work => {
-      this.remaining.push(this.session.push({work, solutions: [], workers: 0, solutionCount: 0}) - 1)
-    })
-    this.remaining.sort((a, b) => {
-      if (a > b) {
-        return 1
-      } else {
-        return -1
-      }
-    })
-    console.log(this.session)
-    if (emitReady) this.server.clients.map(client => client.send(JSON.stringify({responseType: 'request'})))
-  }
-
-  CheckPercentage (solutions, percentage, resolve, reject) {
-    const init = solutions[0]
-    if (solutions.every(solution => solution === init)) {
-      resolve(init)
-    } else {
-      const check = new Map()
-      solutions.map(solution => check.has(solution) ? check.set(solution, check.get(solution) + 1) : check.set(solution, 1))
-      let greatest = {solution: null, hits: 0}
-      for (let [key, val] of check) {
-        if (val > greatest.hits) greatest = {solution: key, hits: val}
-      }
-
-      if ((greatest.hits / this.options.verificationStrength) >= (percentage / 100)) {
-        resolve(greatest.solution)
-      } else {
-        reject()
-      }
-    }
-  }
 }
 
-module.exports.DistriServer = DistriServer
-
-class DistriClient {
-  constructor (opts) {
-    const onDeath = require('death')
-
-    if (opts.constructor.name !== 'Object') throw new TypeError('Options must be in the form of an object')
-    const spawn = require('child_process').spawn
-    const request = require('request')
-    const fs = require('fs')
-    this.options = defaults(opts, {
-      host: 'ws://localhost:8081',
-      availableMethods: ['node']
-    })
-
-    this.client = new WebSocket(this.options.host)
-    const submit = (work) => {
-      this.client.send(JSON.stringify({
-        responseType: 'submit_work',
-        response: work,
-        login
-      }))
-    }
-
-    const file = fs.createWriteStream(`./distri-file`)
-    let runner
-
-    onDeath((sig, err) => {
-      if (runner) runner.kill('SIGINT')
-      fs.unlinkSync(`./distri-file`)
-    })
-
-    let login
-
-    this.client.on('open', () => {
-      this.client.send(JSON.stringify({responseType: 'request', response: ['node']}))
-    })
-    this.client.on('message', (m) => {
-      const message = JSON.parse(m)
-      switch (message.responseType) {
-        case 'file':
-          request(message.response[0]).pipe(file).on('close', () => {
-            runner = spawn(message.response[1], [`./distri-file`], {stdio: ['pipe', 'pipe', 'pipe']})
-            runner.stdout.on('data', (data) => {
-              if (data.toString() === 'ready') {
-                this.client.send(JSON.stringify({response: true, responseType: 'request_work'}))
-              } else {
-                submit(JSON.parse(data).data)
-              }
-            })
-          })
-          break
-        case 'submit_work':
-          runner.stdin.write(JSON.stringify({data: message.work}))
-          break
-      }
-    })
-  }
-}
-
-module.exports.DistriClient = DistriClient
+module.exports = DistriServer
