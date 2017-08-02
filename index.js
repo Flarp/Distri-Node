@@ -68,6 +68,9 @@ class DistriServer extends EventEmitter {
   addWork (work = []) {
     if (!Array.isArray(work)) throw new TypeError('Work supplied to addWork must be in the form of an array')
     work.map(item => this.available.push(this.session.push({ workers: 0, solutions: [], work: item })))
+    if (this.server) {
+      this.server.clients.filter(client => client.ind == -1).map(client => this.serveUser(client, ''))
+    }
 
   }
 
@@ -119,9 +122,9 @@ class DistriServer extends EventEmitter {
       this.server = new WebSocket.Server(this.options.connection)
 
       this.server.on('connection', ws => {
-	ws.ind = -1
+        ws.ind = -1
 
-	this.serveUser(ws, this.options.file)
+        this.serveUser(ws, this.options.file)
         // Right when a user connects, send them the file.
 
         ws.on('message', m => this.handleSubmission(m, ws))
