@@ -69,7 +69,7 @@ class DistriServer extends EventEmitter {
     if (!Array.isArray(work)) throw new TypeError('Work supplied to addWork must be in the form of an array')
     work.map(item => this.available.push(this.session.push({ workers: 0, solutions: [], work: item })))
     if (this.server) {
-      this.server.clients.filter(client => client.ind == -1).map(client => this.serveUser(client, ''))
+      this.server.clients.filter(client => client.ind === -1).map(client => this.serveUser(client, ''))
     }
 
   }
