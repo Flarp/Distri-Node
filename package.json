@@ -4,7 +4,7 @@
   "description": "A distributed computing module for Node.js",
   "main": "index.js",
   "scripts": {
-    "test": "./node_modules/.bin/serial-mocha test/test.js"
+    "test": "mocha"
   },
   "keywords": [
     "distributed",
@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "chai": "^3.5.0",
-    "mocha": "^3.2.0",
+    "mocha": "^3.5.0",
     "standard": "^8.6.0"
   }
 }

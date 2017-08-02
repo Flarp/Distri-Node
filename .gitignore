@@ -1,3 +1,5 @@
 node_modules
 node-doc.md
 .conf.json
+.DS_Store
+package-lock.json
