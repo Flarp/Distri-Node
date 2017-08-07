@@ -1,27 +1,50 @@
 const chai = require('chai');
 const expect = chai.expect;
 const DistriServer = require('../index');
-const ws = require('ws');
+const WebSocket = require('ws');
+const msgpack = require("msgpack-lite");
+let server = new DistriServer(); 
+server.start();
 
 describe('Testing Distri.js', function() {
-    let classInvocation;
-    beforeEach(function() {
-        classInvocation = new DistriServer();  
+    let connection1,  connection2, randomValues;
+    
+    before(function() {
+        connection1 = new WebSocket('ws://localhost:8080');
+        connection2 = new WebSocket('ws://localhost:8080');           
+        
+        connection1.onopen = () => {
+              connection1.send("hi");
+         }
+        
+        connection2.onopen = () => {
+              connection2.send("hi");
+         }
+        randomValues = [1,4,5,6,8,34,12,78,90]
     })
 
-    it('check all aspects of the constructor function', function() {
-        expect(typeof classInvocation).to.equal("object");
-        expect(classInvocation.options.connection.port).to.equal(8080);
-        expect(classInvocation.options.verificationStrength).to.equal(1);   
+
+    it('check send basic functionality ', function() {      
+        connection1.onmessage = (msg) => {
+             expect(msgpack.decode(msg.data)).to.equal({ type: 0, file: '' });
+         }
+      
     });
 
-    it('check getIndex Function', function() {
-        expect(classInvocation.getIndex()).to.not.equal(-1);  
+    it('check addWork ', function() {
+        let check = true;
+        server.addWork(randomValues)
+        server.session.forEach((worker,index) => {
+            if(randomValues.indexOf(worker.work) == -1){
+                check = false;
+            }
+        })
+        expect(check).to.equal(true);
     });
 
-    it('check addWork Function', function() {
-        console.log(classInvocation.addWork([]))
-        //expect(classInvocation.serveUser(ws)).to.equal(-1);  
+    it('check number of expected clients', function() {
+        expect(server.server.clients.length).to.equal(2);
+       
     });
 
  
